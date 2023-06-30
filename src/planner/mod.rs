@@ -9,16 +9,17 @@ pub enum Node {
     },
     Filter {
         filter: Expr,
-        child: Box<Option<Node>>,
+        child: Box<Node>,
     },
     Projection {
         select: Vec<SelectItem>,
-        child: Box<Option<Node>>,
+        child: Box<Node>,
     },
+    Empty {},
 }
 
 pub struct Plan {
-    pub root: Option<Node>,
+    pub root: Node,
 }
 
 impl Plan {
@@ -34,14 +35,12 @@ impl Plan {
                         println!("Select Statement");
                         let Select { from, projection, selection, group_by, .. } = &**select;
                         
-                        let node = None;
-
                         // Build FROM
                         let node = if from.len() > 1 {
                             println!("Unsupported");
                             return Err(Error {})
                         } else if from.len() == 0 {
-                            node
+                            Node::Empty {}
                         } else {
                             let table_name = match &from[0].relation {
                                 sqlparser::ast::TableFactor::Table { name, .. } => {
@@ -53,16 +52,16 @@ impl Plan {
                                 },
                             };
 
-                            Some(Node::Scan {
+                            Node::Scan {
                                 table_name: table_name,
                                 filter: None,
-                            })
+                            }
                         };
 
                         // Build WHERE
                         let node = if selection.is_some() {
                             let filter = selection.as_ref().unwrap();
-                            Some(Node::Filter { filter: filter.clone(), child: Box::new(node) })
+                            Node::Filter { filter: filter.clone(), child: Box::new(node) }
                         } else {
                             node
                         };
@@ -70,7 +69,7 @@ impl Plan {
                         // Build PROJECTION
                         let node = if projection.len() > 0 {
                             let select = projection.clone();
-                            Some(Node::Projection { select: select, child: Box::new(node) })
+                            Node::Projection { select: select, child: Box::new(node) }
                         } else {
                             node
                         };
