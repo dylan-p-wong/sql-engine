@@ -2,6 +2,13 @@ use std::fmt::Error;
 
 use sqlparser::ast::{Statement, Query, SetExpr, Select, Expr, SelectItem};
 
+use crate::{types::Column, storage::{parquet::ParquetReader, get_table_path}};
+
+pub struct PlanNode {
+    pub output_schema: Vec<Column>,
+    pub node : Node,
+}
+
 pub enum Node {
     Scan {
         table_name: String,
@@ -9,17 +16,18 @@ pub enum Node {
     },
     Filter {
         filter: Expr,
-        child: Box<Node>,
+        child: Box<PlanNode>,
     },
     Projection {
         select: Vec<SelectItem>,
-        child: Box<Node>,
+        child: Box<PlanNode>,
     },
-    Empty {},
+    Empty {
+    },
 }
 
 pub struct Plan {
-    pub root: Node,
+    pub root: PlanNode,
 }
 
 impl Plan {
@@ -40,7 +48,10 @@ impl Plan {
                             println!("Unsupported");
                             return Err(Error {})
                         } else if from.len() == 0 {
-                            Node::Empty {}
+                            PlanNode {
+                                output_schema: Vec::new(),
+                                node: Node::Empty {},
+                            }
                         } else {
                             let table_name = match &from[0].relation {
                                 sqlparser::ast::TableFactor::Table { name, .. } => {
@@ -52,16 +63,24 @@ impl Plan {
                                 },
                             };
 
-                            Node::Scan {
-                                table_name: table_name,
-                                filter: None,
+                            let table_path = get_table_path(&table_name);
+
+                            PlanNode {
+                                output_schema: ParquetReader::read_metadata(&table_path)?,
+                                node: Node::Scan {
+                                    table_name: table_name,
+                                    filter: None,
+                                },
                             }
                         };
 
                         // Build WHERE
                         let node = if selection.is_some() {
                             let filter = selection.as_ref().unwrap();
-                            Node::Filter { filter: filter.clone(), child: Box::new(node) }
+                            PlanNode {
+                                output_schema: node.output_schema.clone(),
+                                node: Node::Filter { filter: filter.clone(), child: Box::new(node) }
+                            }
                         } else {
                             node
                         };
@@ -69,7 +88,16 @@ impl Plan {
                         // Build PROJECTION
                         let node = if projection.len() > 0 {
                             let select = projection.clone();
-                            Node::Projection { select: select, child: Box::new(node) }
+                            let headers = if select.len() == 1 && select[0].to_string() == "*" {
+                                node.output_schema.clone()
+                            } else {
+                                select.iter().map(|x| Column{name: x.to_string()}).collect::<Vec<Column>>()
+                            };
+
+                            PlanNode {
+                                output_schema: headers,
+                                node: Node::Projection { select: select, child: Box::new(node) }
+                            }
                         } else {
                             node
                         };
@@ -107,6 +135,7 @@ impl Planner {
             plans.push(Plan::new(&statement)?);
         }
 
+        // TODO
         Ok(plans.pop().unwrap())
     }
 }

@@ -1,42 +1,48 @@
 use std::fmt::Error;
 
+use parquet::record::reader::RowIter;
 use sqlparser::ast::Expr;
 
-use crate::types::{Chunk};
-use crate::storage::parquet::ParquetReader;
+use crate::storage::{StorageReader, get_table_path};
+use crate::types::{Chunk, Column};
+use crate::storage::parquet::{ParquetReader};
 
 use super::Executor;
 
 pub struct Scan {
     table : String,
     filter : Option<Expr>,
+    output_schema : Vec<Column>,
+
+    reader : Box<dyn StorageReader>,
+
+    // temporary until parquet iterator is implemented
+    polled : bool,
 }
 
 impl Scan {
-    pub fn new(table : String, filter : Option<Expr>) -> Result<Box<Scan>, Error> {
-        Ok(Box::new(Scan {
-            table: table,
-            filter: filter,
-        }))
-    }
+    pub fn new(table : String, filter : Option<Expr>, output_schema : Vec<Column>) -> Result<Box<Scan>, Error> {
+        let table_path = get_table_path(&table);
 
-    pub fn get_table_path(s : &str) -> String {
-        return if s.starts_with("'") && s.ends_with("'") {
-            s[1..s.len()-1].to_string()
-        } else {
-            s.to_string()
-        };
+        Ok(Box::new(Scan {
+            table: table.clone(),
+            reader: Box::new(ParquetReader::new(&table_path)?),
+            filter: filter,
+            output_schema: output_schema,
+            polled: false,
+        }))
     }
 }
 
 impl Executor for Scan {
-    fn execute(self: Box<Self>) -> Result<Chunk, Error> {
-        println!("Executing Scan...");
-
-        if self.filter != None {
-            return Err(Error {});
-        } else {
-            return ParquetReader::read(&Scan::get_table_path(&self.table));
+    fn next_chunk(&mut self) -> Result<Chunk, Error> {
+        if self.polled {
+            return Ok(Chunk::default());
         }
+        self.polled = true;
+        self.reader.next_chunk()
+    }
+    fn get_output_schema(&self) -> Vec<Column> {
+        self.output_schema.clone()
     }
 }

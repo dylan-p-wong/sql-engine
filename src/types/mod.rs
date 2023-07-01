@@ -4,7 +4,7 @@ use std::fmt;
 use parquet::record::Field;
 use tabled::{builder::Builder, settings::Style};
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct TupleValue {
     pub value : Field,
 }
@@ -29,19 +29,28 @@ pub struct Column {
     pub name : String,
 }
 
+#[derive(Default, Clone)]
 pub struct Chunk {
-    pub headers : Vec<Column>,
     pub data_chunks : Vec<Row>
 }
 
-impl fmt::Display for Chunk {
+#[derive(Default)]
+pub struct ResultSet {
+    pub output_schema : Vec<Column>,
+    pub data_chunks : Vec<Chunk>,
+}
+
+impl fmt::Display for ResultSet {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let mut builder = Builder::default();
-        let cols = self.headers.iter().map(|x| x.name.clone()).collect::<Vec<String>>();
-        builder.set_header(cols);
+        
+        let headers = self.output_schema.iter().map(|x| x.name.clone()).collect::<Vec<String>>();
+        builder.set_header(headers);
 
-        for row in self.data_chunks.iter() {
-            builder.push_record(row);
+        for chunk in self.data_chunks.iter() {
+            for row in chunk.data_chunks.iter() {
+                builder.push_record(row);
+            }
         }
 
         let mut table = builder.build();

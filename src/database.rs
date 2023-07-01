@@ -5,7 +5,7 @@ use crate::parser;
 use crate::planner;
 use crate::optimizer;
 use crate::executor;
-use crate::types::Chunk;
+use crate::types::ResultSet;
 
 pub struct Database {
     parser: parser::SQLParser,
@@ -29,7 +29,7 @@ impl Database {
         })
     }
 
-    pub fn execute(&self, sql : &str) -> Result<Chunk, Error> {
+    pub fn execute(&self, sql : &str) -> Result<ResultSet, Error> {
         let ast = self.parser.parse(sql)?;
         let plan = self.planner.build(&ast)?;
         let optimized_plan = self.optimizer.optimize(plan)?;
