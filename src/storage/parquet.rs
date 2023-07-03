@@ -6,18 +6,34 @@ use crate::types::{Column, Chunk, TupleValue};
 use super::StorageReader;
 
 pub struct ParquetReader {
-    reader : SerializedFileReader<File>,
+    iter : RowIter<'static>
+}
+
+impl StorageReader for ParquetReader {
+    fn next_chunk(&mut self) -> Result<Chunk, Error> {
+        let mut chunk = Chunk::default();
+
+        while let Some(record) = self.iter.next() {
+            let row = record.get_column_iter().map(|x| TupleValue{ value: x.1.clone() } ).collect::<Vec<TupleValue>>();
+            chunk.data_chunks.push(row);
+
+            // TODO add an exeuction context with this information
+            if chunk.data_chunks.len() >= 1024 {
+                break;
+            }
+        }
+
+        Ok(chunk)
+    }
 }
 
 impl ParquetReader {
-    pub fn new(table : &str) -> Result<ParquetReader, Error> {
-        let path = Path::new(table.clone());
+    pub fn new(table : String) -> Result<ParquetReader, Error> {
+        let path = Path::new(table.as_str());
 
         if let Ok(file) = File::open(&path) {
-            let reader = SerializedFileReader::new(file).unwrap();            
-            
-            
-            Ok(ParquetReader{ reader })
+            let reader = SerializedFileReader::new(file).unwrap();
+            Ok(ParquetReader{ iter: reader.into_iter(), })
         } else {
             println!("File not found");
             return Err(Error {});
@@ -42,20 +58,5 @@ impl ParquetReader {
             println!("File not found");
             return Err(Error {});
         }
-    }
-}
-
-impl StorageReader for ParquetReader {
-    fn next_chunk(&mut self) -> Result<Chunk, Error> {
-        let mut chunk = Chunk::default();
-
-        let mut iter = self.reader.get_row_iter(None).unwrap();
-
-        while let Some(record) = iter.next() {
-            let row = record.get_column_iter().map(|x| TupleValue{ value: x.1.clone() } ).collect::<Vec<TupleValue>>();
-            chunk.data_chunks.push(row);
-        }
-
-        Ok(chunk)
     }
 }
