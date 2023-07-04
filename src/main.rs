@@ -1,9 +1,9 @@
 use rustyline::DefaultEditor;
 
+mod executor;
+mod optimizer;
 mod parser;
 mod planner;
-mod optimizer;
-mod executor;
 mod storage;
 mod types;
 
@@ -23,14 +23,14 @@ fn main() {
 
                 if res.is_err() {
                     println!("{}", res.err().unwrap());
-                    continue
+                    continue;
                 } else {
                     println!("{}", res.unwrap());
                 }
-            },
+            }
             Err(e) => {
                 println!("{}", e);
-                break
+                break;
             }
         }
     }

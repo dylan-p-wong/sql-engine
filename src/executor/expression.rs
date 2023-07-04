@@ -1,14 +1,14 @@
 use std::fmt::Error;
 
-use sqlparser::ast::{Expr, Ident, BinaryOperator};
 use parquet::record::Field;
+use sqlparser::ast::{BinaryOperator, Expr, Ident};
 
-use crate::types::{Row, Column};
+use crate::types::{Column, Row};
 
 pub struct ExprEvaluator;
 
 impl ExprEvaluator {
-    pub fn is_truthy(field : &Field) -> bool {
+    pub fn is_truthy(field: &Field) -> bool {
         match field {
             Field::Bool(b) => {
                 return *b;
@@ -37,7 +37,7 @@ impl ExprEvaluator {
         }
     }
 
-    pub fn evaluate(expr : &Expr, row : &Row, columns : &Vec<Column>) -> Result<Field, Error> {
+    pub fn evaluate(expr: &Expr, row: &Row, columns: &Vec<Column>) -> Result<Field, Error> {
         match expr {
             Expr::BinaryOp { left, op, right } => {
                 let left = Self::evaluate(left, row, columns)?;
@@ -51,13 +51,18 @@ impl ExprEvaluator {
             Expr::Value(value) => {
                 return Self::evaluate_value(value);
             }
-            _ => {
-                return Err(Error {})
-            }
+            _ => return Err(Error {}),
         }
     }
 
-    pub fn evaluate_identifier(ident : &Ident, row : &Row, columns : &Vec<Column>) -> Result<Field, Error> {
+    pub fn evaluate_identifier(
+        ident: &Ident,
+        row: &Row,
+        columns: &Vec<Column>,
+    ) -> Result<Field, Error> {
+        // print!("ident: {:?}", ident);
+        // print!("cols: {:?}", columns);
+
         for (i, column) in columns.iter().enumerate() {
             if column.name == ident.value {
                 return Ok(row[i].value.clone());
@@ -67,7 +72,11 @@ impl ExprEvaluator {
         return Err(Error {});
     }
 
-    pub fn evaluate_binary_op(left : &Field, op : &BinaryOperator, right : &Field) -> Result<Field, Error> {
+    pub fn evaluate_binary_op(
+        left: &Field,
+        op: &BinaryOperator,
+        right: &Field,
+    ) -> Result<Field, Error> {
         match op {
             BinaryOperator::NotEq => {
                 return Ok(Field::Bool(left != right));
@@ -75,14 +84,12 @@ impl ExprEvaluator {
             BinaryOperator::Eq => {
                 return Ok(Field::Bool(left == right));
             }
-            _ => {
-                return Err(Error {})
-            }
+            _ => return Err(Error {}),
         }
     }
 
     // Converts from sqlparser::ast::Value to parquet::record::Field
-    pub fn evaluate_value(value : &sqlparser::ast::Value) -> Result<Field, Error> {
+    pub fn evaluate_value(value: &sqlparser::ast::Value) -> Result<Field, Error> {
         match value {
             sqlparser::ast::Value::Number(n, b) => {
                 if n.parse::<i32>().is_ok() {
@@ -92,7 +99,7 @@ impl ExprEvaluator {
                 } else if n.parse::<f32>().is_ok() {
                     return Ok(Field::Float(n.parse::<f32>().unwrap()));
                 } else {
-                    return Err(Error {})
+                    return Err(Error {});
                 }
             }
             sqlparser::ast::Value::SingleQuotedString(s) => {

@@ -1,14 +1,17 @@
-mod scan;
+mod empty;
+mod expression;
 mod filter;
 mod projection;
-mod expression;
-mod empty;
+mod scan;
 
 use std::fmt::Error;
 
-use crate::{types::{Chunk, ResultSet, Column}, planner::{Plan, Node, PlanNode}};
+use crate::{
+    planner::{Node, Plan, PlanNode},
+    types::{Chunk, Column, ResultSet},
+};
 
-use self::{scan::Scan, filter::Filter, projection::Projection, empty::Empty};
+use self::{empty::Empty, filter::Filter, projection::Projection, scan::Scan};
 
 const VECTOR_SIZE_THRESHOLD: usize = 1024;
 
@@ -34,7 +37,7 @@ impl ExecutorBuilder {
             }
             Node::Filter { filter, child } => {
                 let child = Self::build(*child)?;
-                
+
                 return match Filter::new(child, filter.clone(), plan_node.output_schema.clone()) {
                     Ok(e) => Ok(e),
                     Err(e) => Err(Error {}),
@@ -42,21 +45,20 @@ impl ExecutorBuilder {
             }
             Node::Projection { select, child } => {
                 let child = Self::build(*child)?;
-                
-                return match Projection::new(child, select.clone(), plan_node.output_schema.clone()) {
+
+                return match Projection::new(child, select.clone(), plan_node.output_schema.clone())
+                {
                     Ok(e) => Ok(e),
                     Err(e) => Err(Error {}),
                 };
             }
-            Node::Empty {} => { 
+            Node::Empty {} => {
                 return match Empty::new() {
                     Ok(e) => Ok(e),
                     Err(e) => Err(Error {}),
                 };
             }
-            _ => {
-                return Err(Error {})
-            }
+            _ => return Err(Error {}),
         }
     }
 }
@@ -69,7 +71,6 @@ impl ExecutionEngine {
     }
 
     pub fn execute(&self, plan: Plan) -> Result<ResultSet, Error> {
-        println!("Executing...");
         let mut executor = ExecutorBuilder::build_from_plan(plan)?;
         let mut result = ResultSet::default();
         result.output_schema = executor.get_output_schema();
