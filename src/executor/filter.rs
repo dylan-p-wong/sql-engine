@@ -22,9 +22,9 @@ impl Filter {
         output_schema: Vec<Column>,
     ) -> Result<Box<Filter>, Error> {
         Ok(Box::new(Filter {
-            filter: filter,
-            child: child,
-            output_schema: output_schema,
+            filter,
+            child,
+            output_schema,
             buffer: Chunk::default(),
         }))
     }
@@ -35,7 +35,7 @@ impl Executor for Filter {
         while self.buffer.data_chunks.len() < VECTOR_SIZE_THRESHOLD {
             let next_chunk = self.child.next_chunk()?;
 
-            if next_chunk.data_chunks.len() == 0 {
+            if next_chunk.data_chunks.is_empty() {
                 break;
             }
 
@@ -44,14 +44,14 @@ impl Executor for Filter {
                 .into_iter()
                 .map(|row| {
                     let e = ExprEvaluator::evaluate(&self.filter, &row, &self.output_schema)?;
-                    return Ok((row, e));
+                    Ok((row, e))
                 })
                 .collect();
 
             let filtered_chunks: Vec<Vec<TupleValue>> = helper_chunks?
                 .into_iter()
                 .filter(|(_, field)| {
-                    return ExprEvaluator::is_truthy(field);
+                    ExprEvaluator::is_truthy(field)
                 })
                 .map(|(row, _)| row)
                 .collect();
@@ -59,15 +59,15 @@ impl Executor for Filter {
             self.buffer.data_chunks.extend(filtered_chunks);
         }
 
-        if self.buffer.data_chunks.len() == 0 {
+        if self.buffer.data_chunks.is_empty() {
             return Ok(Chunk::default());
         }
 
         let mut res_chunks = Vec::new();
         swap(&mut res_chunks, &mut self.buffer.data_chunks);
-        return Ok(Chunk {
+        Ok(Chunk {
             data_chunks: res_chunks,
-        });
+        })
     }
 
     fn get_output_schema(&self) -> Vec<Column> {

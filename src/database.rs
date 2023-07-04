@@ -20,12 +20,12 @@ impl Database {
         let optimizer = optimizer::Optimizer::new();
         let executor = executor::ExecutionEngine::new();
 
-        return Ok(Database {
+        Ok(Database {
             parser,
             planner,
             optimizer,
             executor,
-        });
+        })
     }
 
     pub fn execute(&self, sql: &str) -> Result<ResultSet, Error> {
@@ -33,6 +33,6 @@ impl Database {
         let plan = self.planner.build(&ast)?;
         let optimized_plan = self.optimizer.optimize(plan)?;
         let result_set = self.executor.execute(optimized_plan)?;
-        return Ok(result_set);
+        Ok(result_set)
     }
 }

@@ -21,9 +21,9 @@ impl Executor for Empty {
     fn next_chunk(&mut self) -> Result<Chunk, Error> {
         let mut res_chunks = Vec::new();
         swap(&mut res_chunks, &mut self.buffer.data_chunks);
-        return Ok(Chunk {
+        Ok(Chunk {
             data_chunks: res_chunks,
-        });
+        })
     }
 
     fn get_output_schema(&self) -> Vec<crate::types::Column> {

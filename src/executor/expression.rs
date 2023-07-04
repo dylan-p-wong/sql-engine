@@ -11,28 +11,28 @@ impl ExprEvaluator {
     pub fn is_truthy(field: &Field) -> bool {
         match field {
             Field::Bool(b) => {
-                return *b;
+                *b
             }
             Field::Int(i) => {
-                return *i != 0;
+                *i != 0
             }
             Field::Long(l) => {
-                return *l != 0;
+                *l != 0
             }
             Field::Float(f) => {
-                return *f != 0.0;
+                *f != 0.0
             }
             Field::Double(d) => {
-                return *d != 0.0;
+                *d != 0.0
             }
             Field::Str(s) => {
-                return s != "";
+                !s.is_empty()
             }
             Field::Null => {
-                return false;
+                false
             }
             _ => {
-                return false;
+                false
             }
         }
     }
@@ -43,33 +43,30 @@ impl ExprEvaluator {
                 let left = Self::evaluate(left, row, columns)?;
                 let right = Self::evaluate(right, row, columns)?;
 
-                return Self::evaluate_binary_op(&left, op, &right);
+                Self::evaluate_binary_op(&left, op, &right)
             }
             Expr::Identifier(ident) => {
-                return Self::evaluate_identifier(ident, row, columns);
+                Self::evaluate_identifier(ident, row, columns)
             }
             Expr::Value(value) => {
-                return Self::evaluate_value(value);
+                Self::evaluate_value(value)
             }
-            _ => return Err(Error {}),
+            _ => Err(Error {}),
         }
     }
 
     pub fn evaluate_identifier(
         ident: &Ident,
         row: &Row,
-        columns: &Vec<Column>,
+        columns: &[Column],
     ) -> Result<Field, Error> {
-        // print!("ident: {:?}", ident);
-        // print!("cols: {:?}", columns);
-
         for (i, column) in columns.iter().enumerate() {
             if column.name == ident.value {
-                return Ok(row[i].value.clone());
+                return Ok(row[i].value.clone())
             }
         }
 
-        return Err(Error {});
+        Err(Error {})
     }
 
     pub fn evaluate_binary_op(
@@ -79,12 +76,12 @@ impl ExprEvaluator {
     ) -> Result<Field, Error> {
         match op {
             BinaryOperator::NotEq => {
-                return Ok(Field::Bool(left != right));
+                Ok(Field::Bool(left != right))
             }
             BinaryOperator::Eq => {
-                return Ok(Field::Bool(left == right));
+                Ok(Field::Bool(left == right))
             }
-            _ => return Err(Error {}),
+            _ => Err(Error {}),
         }
     }
 
@@ -93,23 +90,23 @@ impl ExprEvaluator {
         match value {
             sqlparser::ast::Value::Number(n, b) => {
                 if n.parse::<i32>().is_ok() {
-                    return Ok(Field::Int(n.parse::<i32>().unwrap()));
+                    Ok(Field::Int(n.parse::<i32>().unwrap()))
                 } else if n.parse::<i64>().is_ok() {
-                    return Ok(Field::Long(n.parse::<i64>().unwrap()));
+                    Ok(Field::Long(n.parse::<i64>().unwrap()))
                 } else if n.parse::<f32>().is_ok() {
-                    return Ok(Field::Float(n.parse::<f32>().unwrap()));
+                    Ok(Field::Float(n.parse::<f32>().unwrap()))
                 } else {
-                    return Err(Error {});
+                    Err(Error {})
                 }
             }
             sqlparser::ast::Value::SingleQuotedString(s) => {
-                return Ok(Field::Str(s.to_string()));
+                Ok(Field::Str(s.to_string()))
             }
             sqlparser::ast::Value::Null => {
-                return Ok(Field::Null);
+                Ok(Field::Null)
             }
             _ => {
-                return Err(Error {});
+                Err(Error {})
             }
         }
     }

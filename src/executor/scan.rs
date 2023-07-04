@@ -24,10 +24,10 @@ impl Scan {
         let table_path = get_table_path(&table);
 
         Ok(Box::new(Scan {
-            table: table.clone(),
+            table,
             reader: Box::new(ParquetReader::new(table_path)?),
-            filter: filter,
-            output_schema: output_schema,
+            filter,
+            output_schema,
         }))
     }
 }

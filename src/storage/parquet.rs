@@ -16,7 +16,7 @@ impl StorageReader for ParquetReader {
     fn next_chunk(&mut self) -> Result<Chunk, Error> {
         let mut chunk = Chunk::default();
 
-        while let Some(record) = self.iter.next() {
+        for record in self.iter.by_ref() {
             let row = record
                 .get_column_iter()
                 .map(|x| TupleValue { value: x.1.clone() })
@@ -37,13 +37,13 @@ impl ParquetReader {
     pub fn new(table: String) -> Result<ParquetReader, Error> {
         let path = Path::new(table.as_str());
 
-        if let Ok(file) = File::open(&path) {
+        if let Ok(file) = File::open(path) {
             let reader = SerializedFileReader::new(file).unwrap();
             Ok(ParquetReader {
                 iter: reader.into_iter(),
             })
         } else {
-            return Err(Error {});
+            Err(Error {})
         }
     }
 
@@ -52,7 +52,7 @@ impl ParquetReader {
 
         let mut headers = Vec::new();
 
-        if let Ok(file) = File::open(&path) {
+        if let Ok(file) = File::open(path) {
             let reader = SerializedFileReader::new(file).unwrap();
 
             reader
@@ -67,9 +67,9 @@ impl ParquetReader {
                     });
                 });
 
-            return Ok(headers);
+            Ok(headers)
         } else {
-            return Err(Error {});
+            Err(Error {})
         }
     }
 }

@@ -57,7 +57,7 @@ impl Plan {
                         // Build FROM
                         let node = if from.len() > 1 {
                             return Err(Error {});
-                        } else if from.len() == 0 {
+                        } else if from.is_empty() {
                             PlanNode {
                                 output_schema: Vec::new(),
                                 node: Node::Empty {},
@@ -75,7 +75,7 @@ impl Plan {
                             PlanNode {
                                 output_schema: ParquetReader::read_metadata(&table_path)?,
                                 node: Node::Scan {
-                                    table_name: table_name,
+                                    table_name,
                                     filter: None,
                                 },
                             }
@@ -96,7 +96,7 @@ impl Plan {
                         };
 
                         // Build PROJECTION
-                        let node = if projection.len() > 0 {
+                        let node = if !projection.is_empty() {
                             let select = projection.clone();
                             let headers = if select.len() == 1 && select[0].to_string() == "*" {
                                 node.output_schema.clone()
@@ -112,7 +112,7 @@ impl Plan {
                             PlanNode {
                                 output_schema: headers,
                                 node: Node::Projection {
-                                    select: select,
+                                    select,
                                     child: Box::new(node),
                                 },
                             }
@@ -122,11 +122,11 @@ impl Plan {
 
                         Ok(Plan { root: node })
                     }
-                    _ => return Err(Error {}),
+                    _ => Err(Error {}),
                 }
             }
             _ => {
-                return Err(Error {});
+                Err(Error {})
             }
         }
     }
@@ -143,7 +143,7 @@ impl Planner {
         let mut plans: Vec<Plan> = Vec::new();
 
         for statement in statements {
-            plans.push(Plan::new(&statement)?);
+            plans.push(Plan::new(statement)?);
         }
 
         // TODO

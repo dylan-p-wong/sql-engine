@@ -10,6 +10,6 @@ impl Optimizer {
     }
 
     pub fn optimize(&self, plan: Plan) -> Result<Plan, Error> {
-        return Ok(plan);
+        Ok(plan)
     }
 }

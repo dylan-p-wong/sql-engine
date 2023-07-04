@@ -24,9 +24,9 @@ impl Projection {
     ) -> Result<Box<Projection>, Error> {
         Ok(Box::new(Projection {
             buffer: Chunk::default(),
-            select: select,
-            child: child,
-            output_schema: output_schema,
+            select,
+            child,
+            output_schema,
         }))
     }
 }
@@ -36,7 +36,7 @@ impl Executor for Projection {
         while self.buffer.data_chunks.len() < VECTOR_SIZE_THRESHOLD {
             let next_chunk = self.child.next_chunk()?;
 
-            if next_chunk.data_chunks.len() == 0 {
+            if next_chunk.data_chunks.is_empty() {
                 break;
             }
 
@@ -67,15 +67,15 @@ impl Executor for Projection {
             }
         }
 
-        if self.buffer.data_chunks.len() == 0 {
+        if self.buffer.data_chunks.is_empty() {
             return Ok(Chunk::default());
         }
 
         let mut res_chunks = Vec::new();
         swap(&mut res_chunks, &mut self.buffer.data_chunks);
-        return Ok(Chunk {
+        Ok(Chunk {
             data_chunks: res_chunks,
-        });
+        })
     }
 
     fn get_output_schema(&self) -> Vec<Column> {

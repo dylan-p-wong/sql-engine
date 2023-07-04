@@ -30,7 +30,7 @@ impl ExecutorBuilder {
     fn build(plan_node: PlanNode) -> Result<Box<dyn Executor>, Error> {
         match plan_node.node {
             Node::Scan { table_name, filter } => {
-                match Scan::new(table_name, filter.clone(), plan_node.output_schema.clone()) {
+                match Scan::new(table_name, filter, plan_node.output_schema.clone()) {
                     Ok(e) => Ok(e),
                     Err(e) => Err(Error {}),
                 }
@@ -38,27 +38,26 @@ impl ExecutorBuilder {
             Node::Filter { filter, child } => {
                 let child = Self::build(*child)?;
 
-                return match Filter::new(child, filter.clone(), plan_node.output_schema.clone()) {
+                match Filter::new(child, filter, plan_node.output_schema.clone()) {
                     Ok(e) => Ok(e),
                     Err(e) => Err(Error {}),
-                };
+                }
             }
             Node::Projection { select, child } => {
                 let child = Self::build(*child)?;
 
-                return match Projection::new(child, select.clone(), plan_node.output_schema.clone())
+                match Projection::new(child, select, plan_node.output_schema.clone())
                 {
                     Ok(e) => Ok(e),
                     Err(e) => Err(Error {}),
-                };
+                }
             }
             Node::Empty {} => {
-                return match Empty::new() {
+                match Empty::new() {
                     Ok(e) => Ok(e),
                     Err(e) => Err(Error {}),
-                };
+                }
             }
-            _ => return Err(Error {}),
         }
     }
 }
@@ -78,7 +77,7 @@ impl ExecutionEngine {
         loop {
             let chunk = executor.next_chunk()?;
 
-            if chunk.data_chunks.len() == 0 {
+            if chunk.data_chunks.is_empty() {
                 break;
             }
 

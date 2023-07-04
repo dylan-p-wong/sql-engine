@@ -21,8 +21,13 @@ jobs:
           profile: minimal
           toolchain: stable
           components: rustfmt
-      - name: Check code format
+      - name: Format
         uses: actions-rs/cargo@v1
         with:
           command: fmt
           args: --all -- --check
+      - name: Clippy
+        uses: actions-rs/cargo@v1
+        with:
+          command: clippy
+          args: --all-targets -- -D warnings

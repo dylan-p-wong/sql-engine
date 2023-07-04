@@ -9,9 +9,9 @@ pub trait StorageReader {
 }
 
 pub fn get_table_path(s: &str) -> String {
-    return if s.starts_with("'") && s.ends_with("'") {
+    if s.starts_with('\'') && s.ends_with('\'') {
         s[1..s.len() - 1].to_string()
     } else {
         s.to_string()
-    };
+    }
 }
