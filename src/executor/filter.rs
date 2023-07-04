@@ -50,9 +50,7 @@ impl Executor for Filter {
 
             let filtered_chunks: Vec<Vec<TupleValue>> = helper_chunks?
                 .into_iter()
-                .filter(|(_, field)| {
-                    ExprEvaluator::is_truthy(field)
-                })
+                .filter(|(_, field)| ExprEvaluator::is_truthy(field))
                 .map(|(row, _)| row)
                 .collect();
 

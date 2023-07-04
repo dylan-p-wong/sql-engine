@@ -46,18 +46,15 @@ impl ExecutorBuilder {
             Node::Projection { select, child } => {
                 let child = Self::build(*child)?;
 
-                match Projection::new(child, select, plan_node.output_schema.clone())
-                {
+                match Projection::new(child, select, plan_node.output_schema.clone()) {
                     Ok(e) => Ok(e),
                     Err(e) => Err(Error {}),
                 }
             }
-            Node::Empty {} => {
-                match Empty::new() {
-                    Ok(e) => Ok(e),
-                    Err(e) => Err(Error {}),
-                }
-            }
+            Node::Empty {} => match Empty::new() {
+                Ok(e) => Ok(e),
+                Err(e) => Err(Error {}),
+            },
         }
     }
 }

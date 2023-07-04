@@ -10,30 +10,14 @@ pub struct ExprEvaluator;
 impl ExprEvaluator {
     pub fn is_truthy(field: &Field) -> bool {
         match field {
-            Field::Bool(b) => {
-                *b
-            }
-            Field::Int(i) => {
-                *i != 0
-            }
-            Field::Long(l) => {
-                *l != 0
-            }
-            Field::Float(f) => {
-                *f != 0.0
-            }
-            Field::Double(d) => {
-                *d != 0.0
-            }
-            Field::Str(s) => {
-                !s.is_empty()
-            }
-            Field::Null => {
-                false
-            }
-            _ => {
-                false
-            }
+            Field::Bool(b) => *b,
+            Field::Int(i) => *i != 0,
+            Field::Long(l) => *l != 0,
+            Field::Float(f) => *f != 0.0,
+            Field::Double(d) => *d != 0.0,
+            Field::Str(s) => !s.is_empty(),
+            Field::Null => false,
+            _ => false,
         }
     }
 
@@ -45,12 +29,8 @@ impl ExprEvaluator {
 
                 Self::evaluate_binary_op(&left, op, &right)
             }
-            Expr::Identifier(ident) => {
-                Self::evaluate_identifier(ident, row, columns)
-            }
-            Expr::Value(value) => {
-                Self::evaluate_value(value)
-            }
+            Expr::Identifier(ident) => Self::evaluate_identifier(ident, row, columns),
+            Expr::Value(value) => Self::evaluate_value(value),
             _ => Err(Error {}),
         }
     }
@@ -62,7 +42,7 @@ impl ExprEvaluator {
     ) -> Result<Field, Error> {
         for (i, column) in columns.iter().enumerate() {
             if column.name == ident.value {
-                return Ok(row[i].value.clone())
+                return Ok(row[i].value.clone());
             }
         }
 
@@ -75,12 +55,8 @@ impl ExprEvaluator {
         right: &Field,
     ) -> Result<Field, Error> {
         match op {
-            BinaryOperator::NotEq => {
-                Ok(Field::Bool(left != right))
-            }
-            BinaryOperator::Eq => {
-                Ok(Field::Bool(left == right))
-            }
+            BinaryOperator::NotEq => Ok(Field::Bool(left != right)),
+            BinaryOperator::Eq => Ok(Field::Bool(left == right)),
             _ => Err(Error {}),
         }
     }
@@ -99,15 +75,9 @@ impl ExprEvaluator {
                     Err(Error {})
                 }
             }
-            sqlparser::ast::Value::SingleQuotedString(s) => {
-                Ok(Field::Str(s.to_string()))
-            }
-            sqlparser::ast::Value::Null => {
-                Ok(Field::Null)
-            }
-            _ => {
-                Err(Error {})
-            }
+            sqlparser::ast::Value::SingleQuotedString(s) => Ok(Field::Str(s.to_string())),
+            sqlparser::ast::Value::Null => Ok(Field::Null),
+            _ => Err(Error {}),
         }
     }
 }

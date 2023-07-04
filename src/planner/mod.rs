@@ -125,9 +125,7 @@ impl Plan {
                     _ => Err(Error {}),
                 }
             }
-            _ => {
-                Err(Error {})
-            }
+            _ => Err(Error {}),
         }
     }
 }
