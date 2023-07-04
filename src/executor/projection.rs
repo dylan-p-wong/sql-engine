@@ -44,10 +44,10 @@ impl Executor for Projection {
                 let mut new_row = Row::new();
 
                 for item in &self.select {
-                    match item {
+                    match &item {
                         SelectItem::UnnamedExpr(expr) => {
                             let e = ExprEvaluator::evaluate(
-                                &expr,
+                                expr,
                                 &row,
                                 &self.child.get_output_schema(),
                             )?;

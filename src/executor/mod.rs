@@ -32,7 +32,7 @@ impl ExecutorBuilder {
             Node::Scan { table_name, filter } => {
                 match Scan::new(table_name, filter, plan_node.output_schema.clone()) {
                     Ok(e) => Ok(e),
-                    Err(e) => Err(Error {}),
+                    Err(_e) => Err(Error {}),
                 }
             }
             Node::Filter { filter, child } => {
@@ -40,7 +40,7 @@ impl ExecutorBuilder {
 
                 match Filter::new(child, filter, plan_node.output_schema.clone()) {
                     Ok(e) => Ok(e),
-                    Err(e) => Err(Error {}),
+                    Err(_e) => Err(Error {}),
                 }
             }
             Node::Projection { select, child } => {
@@ -48,12 +48,12 @@ impl ExecutorBuilder {
 
                 match Projection::new(child, select, plan_node.output_schema.clone()) {
                     Ok(e) => Ok(e),
-                    Err(e) => Err(Error {}),
+                    Err(_e) => Err(Error {}),
                 }
             }
             Node::Empty {} => match Empty::new() {
                 Ok(e) => Ok(e),
-                Err(e) => Err(Error {}),
+                Err(_e) => Err(Error {}),
             },
         }
     }
@@ -68,8 +68,7 @@ impl ExecutionEngine {
 
     pub fn execute(&self, plan: Plan) -> Result<ResultSet, Error> {
         let mut executor = ExecutorBuilder::build_from_plan(plan)?;
-        let mut result = ResultSet::default();
-        result.output_schema = executor.get_output_schema();
+        let mut result = ResultSet::new(executor.get_output_schema());
 
         loop {
             let chunk = executor.next_chunk()?;

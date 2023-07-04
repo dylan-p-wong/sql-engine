@@ -36,13 +36,7 @@ impl Plan {
     pub fn new(statement: &Statement) -> Result<Plan, Error> {
         match statement {
             Statement::Query(query) => {
-                let Query {
-                    ref body,
-                    ref order_by,
-                    ref limit,
-                    ref offset,
-                    ..
-                } = **query;
+                let Query { ref body, .. } = **query;
 
                 match &**body {
                     SetExpr::Select(select) => {
@@ -50,7 +44,6 @@ impl Plan {
                             from,
                             projection,
                             selection,
-                            group_by,
                             ..
                         } = &**select;
 

@@ -8,9 +8,9 @@ pub struct TupleValue {
     pub value: Field,
 }
 
-impl Into<std::string::String> for &TupleValue {
-    fn into(self) -> std::string::String {
-        match &self.value {
+impl From<&TupleValue> for std::string::String {
+    fn from(val: &TupleValue) -> Self {
+        match &val.value {
             Field::Bool(b) => b.to_string(),
             Field::Int(i) => i.to_string(),
             Field::Float(f) => f.to_string(),
@@ -39,6 +39,15 @@ pub struct ResultSet {
     pub data_chunks: Vec<Chunk>,
 }
 
+impl ResultSet {
+    pub fn new(output_schema: Vec<Column>) -> ResultSet {
+        ResultSet {
+            output_schema,
+            data_chunks: Vec::new(),
+        }
+    }
+}
+
 impl fmt::Display for ResultSet {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let mut builder = Builder::default();
@@ -58,7 +67,7 @@ impl fmt::Display for ResultSet {
 
         let mut table = builder.build();
         table.with(Style::rounded());
-        println!("{}", table);
+        writeln!(f, "{}", table)?;
         Ok(())
     }
 }

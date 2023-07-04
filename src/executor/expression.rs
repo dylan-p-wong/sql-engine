@@ -64,7 +64,7 @@ impl ExprEvaluator {
     // Converts from sqlparser::ast::Value to parquet::record::Field
     pub fn evaluate_value(value: &sqlparser::ast::Value) -> Result<Field, Error> {
         match value {
-            sqlparser::ast::Value::Number(n, b) => {
+            sqlparser::ast::Value::Number(n, _b) => {
                 if n.parse::<i32>().is_ok() {
                     Ok(Field::Int(n.parse::<i32>().unwrap()))
                 } else if n.parse::<i64>().is_ok() {

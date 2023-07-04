@@ -9,8 +9,8 @@ use crate::types::{Chunk, Column};
 use super::Executor;
 
 pub struct Scan {
-    table: String,
-    filter: Option<Expr>,
+    _table: String,
+    _filter: Option<Expr>,
     output_schema: Vec<Column>,
     reader: Box<dyn StorageReader>,
 }
@@ -24,9 +24,9 @@ impl Scan {
         let table_path = get_table_path(&table);
 
         Ok(Box::new(Scan {
-            table,
+            _table: table,
             reader: Box::new(ParquetReader::new(table_path)?),
-            filter,
+            _filter: filter,
             output_schema,
         }))
     }
