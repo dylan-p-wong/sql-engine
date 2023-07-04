@@ -9,8 +9,7 @@ impl Optimizer {
         Optimizer {}
     }
 
-    pub fn optimize(&self, plan : Plan) -> Result<Plan, Error> {
-        println!("Optimizing...");
-        return Ok(plan);
+    pub fn optimize(&self, plan: Plan) -> Result<Plan, Error> {
+        Ok(plan)
     }
 }

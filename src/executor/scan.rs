@@ -2,28 +2,32 @@ use std::fmt::Error;
 
 use sqlparser::ast::Expr;
 
-use crate::storage::{StorageReader, get_table_path};
+use crate::storage::parquet::ParquetReader;
+use crate::storage::{get_table_path, StorageReader};
 use crate::types::{Chunk, Column};
-use crate::storage::parquet::{ParquetReader};
 
 use super::Executor;
 
 pub struct Scan {
-    table : String,
-    filter : Option<Expr>,
-    output_schema : Vec<Column>,
-    reader : Box<dyn StorageReader>,
+    _table: String,
+    _filter: Option<Expr>,
+    output_schema: Vec<Column>,
+    reader: Box<dyn StorageReader>,
 }
 
 impl Scan {
-    pub fn new(table : String, filter : Option<Expr>, output_schema : Vec<Column>) -> Result<Box<Self>, Error> {
+    pub fn new(
+        table: String,
+        filter: Option<Expr>,
+        output_schema: Vec<Column>,
+    ) -> Result<Box<Self>, Error> {
         let table_path = get_table_path(&table);
 
         Ok(Box::new(Scan {
-            table: table.clone(),
+            _table: table,
             reader: Box::new(ParquetReader::new(table_path)?),
-            filter: filter,
-            output_schema: output_schema,
+            _filter: filter,
+            output_schema,
         }))
     }
 }

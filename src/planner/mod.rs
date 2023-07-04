@@ -1,12 +1,15 @@
 use std::fmt::Error;
 
-use sqlparser::ast::{Statement, Query, SetExpr, Select, Expr, SelectItem};
+use sqlparser::ast::{Expr, Query, Select, SelectItem, SetExpr, Statement};
 
-use crate::{types::Column, storage::{parquet::ParquetReader, get_table_path}};
+use crate::{
+    storage::{get_table_path, parquet::ParquetReader},
+    types::Column,
+};
 
 pub struct PlanNode {
     pub output_schema: Vec<Column>,
-    pub node : Node,
+    pub node: Node,
 }
 
 pub enum Node {
@@ -22,8 +25,7 @@ pub enum Node {
         select: Vec<SelectItem>,
         child: Box<PlanNode>,
     },
-    Empty {
-    },
+    Empty {},
 }
 
 pub struct Plan {
@@ -31,36 +33,34 @@ pub struct Plan {
 }
 
 impl Plan {
-    pub fn new(statement : &Statement) -> Result<Plan, Error> {
+    pub fn new(statement: &Statement) -> Result<Plan, Error> {
         match statement {
             Statement::Query(query) => {
-                println!("Query Statement");
-                
-                let Query { ref body, ref order_by, ref limit, ref offset, .. } = **query;
+                let Query { ref body, .. } = **query;
 
                 match &**body {
                     SetExpr::Select(select) => {
-                        println!("Select Statement");
-                        let Select { from, projection, selection, group_by, .. } = &**select;
-                        
+                        let Select {
+                            from,
+                            projection,
+                            selection,
+                            ..
+                        } = &**select;
+
                         // Build FROM
                         let node = if from.len() > 1 {
-                            println!("Unsupported");
-                            return Err(Error {})
-                        } else if from.len() == 0 {
+                            return Err(Error {});
+                        } else if from.is_empty() {
                             PlanNode {
                                 output_schema: Vec::new(),
                                 node: Node::Empty {},
                             }
                         } else {
                             let table_name = match &from[0].relation {
-                                sqlparser::ast::TableFactor::Table { name, .. } => {
-                                    name.to_string()
-                                },
+                                sqlparser::ast::TableFactor::Table { name, .. } => name.to_string(),
                                 _ => {
-                                    println!("Unsupported");
-                                    return Err(Error {})
-                                },
+                                    return Err(Error {});
+                                }
                             };
 
                             let table_path = get_table_path(&table_name);
@@ -68,7 +68,7 @@ impl Plan {
                             PlanNode {
                                 output_schema: ParquetReader::read_metadata(&table_path)?,
                                 node: Node::Scan {
-                                    table_name: table_name,
+                                    table_name,
                                     filter: None,
                                 },
                             }
@@ -79,42 +79,46 @@ impl Plan {
                             let filter = selection.as_ref().unwrap();
                             PlanNode {
                                 output_schema: node.output_schema.clone(),
-                                node: Node::Filter { filter: filter.clone(), child: Box::new(node) }
+                                node: Node::Filter {
+                                    filter: filter.clone(),
+                                    child: Box::new(node),
+                                },
                             }
                         } else {
                             node
                         };
 
                         // Build PROJECTION
-                        let node = if projection.len() > 0 {
+                        let node = if !projection.is_empty() {
                             let select = projection.clone();
                             let headers = if select.len() == 1 && select[0].to_string() == "*" {
                                 node.output_schema.clone()
                             } else {
-                                select.iter().map(|x| Column{name: x.to_string()}).collect::<Vec<Column>>()
+                                select
+                                    .iter()
+                                    .map(|x| Column {
+                                        name: x.to_string(),
+                                    })
+                                    .collect::<Vec<Column>>()
                             };
 
                             PlanNode {
                                 output_schema: headers,
-                                node: Node::Projection { select: select, child: Box::new(node) }
+                                node: Node::Projection {
+                                    select,
+                                    child: Box::new(node),
+                                },
                             }
                         } else {
                             node
                         };
 
-                        Ok(Plan {
-                            root: node,
-                        })
-                    },
-                    _ => {
-                        return Err(Error {})
-                    },
+                        Ok(Plan { root: node })
+                    }
+                    _ => Err(Error {}),
                 }
-            },
-            _ => {
-                println!("Unsupported");
-                return Err(Error {});
             }
+            _ => Err(Error {}),
         }
     }
 }
@@ -126,13 +130,11 @@ impl Planner {
         Planner {}
     }
 
-    pub fn build(&self, statements : &Vec<Statement>) -> Result<Plan, Error> {
-        println!("Building Plan...");
-
-        let mut plans : Vec<Plan> = Vec::new();
+    pub fn build(&self, statements: &Vec<Statement>) -> Result<Plan, Error> {
+        let mut plans: Vec<Plan> = Vec::new();
 
         for statement in statements {
-            plans.push(Plan::new(&statement)?);
+            plans.push(Plan::new(statement)?);
         }
 
         // TODO

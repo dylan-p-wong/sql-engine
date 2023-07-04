@@ -16,11 +16,10 @@ impl SQLParser {
     }
 
     pub fn parse(&self, sql: &str) -> Result<Vec<Statement>, Error> {
-        println!("Parsing...");
         let ast = Parser::parse_sql(&self.dialect, sql);
-        if !ast.is_ok() {
+        if ast.is_err() {
             return Err(Error {});
         }
-        return Ok(ast.unwrap());
+        Ok(ast.unwrap())
     }
 }

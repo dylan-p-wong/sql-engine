@@ -1,10 +1,9 @@
-
 use std::fmt::Error;
 
+use crate::executor;
+use crate::optimizer;
 use crate::parser;
 use crate::planner;
-use crate::optimizer;
-use crate::executor;
 use crate::types::ResultSet;
 
 pub struct Database {
@@ -21,7 +20,7 @@ impl Database {
         let optimizer = optimizer::Optimizer::new();
         let executor = executor::ExecutionEngine::new();
 
-        return Ok(Database {
+        Ok(Database {
             parser,
             planner,
             optimizer,
@@ -29,11 +28,11 @@ impl Database {
         })
     }
 
-    pub fn execute(&self, sql : &str) -> Result<ResultSet, Error> {
+    pub fn execute(&self, sql: &str) -> Result<ResultSet, Error> {
         let ast = self.parser.parse(sql)?;
         let plan = self.planner.build(&ast)?;
         let optimized_plan = self.optimizer.optimize(plan)?;
         let result_set = self.executor.execute(optimized_plan)?;
-        return Ok(result_set)
+        Ok(result_set)
     }
 }
