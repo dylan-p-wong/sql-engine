@@ -8,6 +8,13 @@ pub struct TupleValue {
     pub value: Field,
 }
 
+impl fmt::Display for TupleValue {
+    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+        fmt.write_str(self.value.to_string().as_str())?;
+        Ok(())
+    }
+}
+
 impl From<&TupleValue> for std::string::String {
     fn from(val: &TupleValue) -> Self {
         match &val.value {

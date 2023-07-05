@@ -1,0 +1,4 @@
+query II
+select id, salary from 'tests/resources/data/userdata1.parquet' where id=777
+----
+777 42559.27
