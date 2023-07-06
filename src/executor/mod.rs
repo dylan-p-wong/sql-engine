@@ -4,11 +4,9 @@ mod filter;
 mod projection;
 mod scan;
 
-use std::fmt::Error;
-
 use crate::{
     planner::{Node, Plan, PlanNode},
-    types::{Chunk, Column, ResultSet},
+    types::{error::Error, Chunk, Column, ResultSet},
 };
 
 use self::{empty::Empty, filter::Filter, projection::Projection, scan::Scan};
@@ -32,7 +30,7 @@ impl ExecutorBuilder {
             Node::Scan { table_name, filter } => {
                 match Scan::new(table_name, filter, plan_node.output_schema.clone()) {
                     Ok(e) => Ok(e),
-                    Err(_e) => Err(Error {}),
+                    Err(e) => Err(e),
                 }
             }
             Node::Filter { filter, child } => {
@@ -40,7 +38,7 @@ impl ExecutorBuilder {
 
                 match Filter::new(child, filter, plan_node.output_schema.clone()) {
                     Ok(e) => Ok(e),
-                    Err(_e) => Err(Error {}),
+                    Err(e) => Err(e),
                 }
             }
             Node::Projection { select, child } => {
@@ -48,12 +46,12 @@ impl ExecutorBuilder {
 
                 match Projection::new(child, select, plan_node.output_schema.clone()) {
                     Ok(e) => Ok(e),
-                    Err(_e) => Err(Error {}),
+                    Err(e) => Err(e),
                 }
             }
             Node::Empty {} => match Empty::new() {
                 Ok(e) => Ok(e),
-                Err(_e) => Err(Error {}),
+                Err(e) => Err(e),
             },
         }
     }

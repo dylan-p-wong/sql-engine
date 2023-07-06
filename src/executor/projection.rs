@@ -1,8 +1,8 @@
-use std::{fmt::Error, mem::swap};
+use std::mem::swap;
 
 use crate::{
     executor::expression::ExprEvaluator,
-    types::{Chunk, Column, Row, TupleValue},
+    types::{error::Error, Chunk, Column, Row, TupleValue},
 };
 use sqlparser::ast::SelectItem;
 
@@ -59,7 +59,7 @@ impl Executor for Projection {
                             }
                         }
                         _ => {
-                            return Err(Error {});
+                            return Err(Error::Execution("SelectItem not supported".to_string()));
                         }
                     }
                 }

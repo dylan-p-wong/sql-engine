@@ -1,6 +1,4 @@
-use std::fmt::Error;
-
-use crate::planner::Plan;
+use crate::{planner::Plan, types::error::Error};
 
 pub struct Optimizer {}
 

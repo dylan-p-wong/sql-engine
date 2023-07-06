@@ -1,10 +1,8 @@
-use std::fmt::Error;
-
 use sqlparser::ast::{Expr, Query, Select, SelectItem, SetExpr, Statement};
 
 use crate::{
     storage::{get_table_path, parquet::ParquetReader},
-    types::Column,
+    types::{error::Error, Column},
 };
 
 pub struct PlanNode {
@@ -49,7 +47,7 @@ impl Plan {
 
                         // Build FROM
                         let node = if from.len() > 1 {
-                            return Err(Error {});
+                            return Err(Error::Planner("Multiple FROM not supported".to_string()));
                         } else if from.is_empty() {
                             PlanNode {
                                 output_schema: Vec::new(),
@@ -59,7 +57,7 @@ impl Plan {
                             let table_name = match &from[0].relation {
                                 sqlparser::ast::TableFactor::Table { name, .. } => name.to_string(),
                                 _ => {
-                                    return Err(Error {});
+                                    return Err(Error::Planner("JOIN not supported".to_string()));
                                 }
                             };
 
@@ -115,10 +113,12 @@ impl Plan {
 
                         Ok(Plan { root: node })
                     }
-                    _ => Err(Error {}),
+                    _ => Err(Error::Planner("Only SELECT is supported".to_string())),
                 }
             }
-            _ => Err(Error {}),
+            _ => Err(Error::Planner(
+                "Only Query operations are supported".to_string(),
+            )),
         }
     }
 }
