@@ -3,6 +3,8 @@ use std::fmt;
 use parquet::record::Field;
 use tabled::{builder::Builder, settings::Style};
 
+pub mod error;
+
 #[derive(Debug, Clone)]
 pub struct TupleValue {
     pub value: Field,

@@ -1,6 +1,4 @@
-use std::fmt::Error;
-
-use crate::types::Chunk;
+use crate::types::{error::Error, Chunk};
 
 pub mod parquet;
 

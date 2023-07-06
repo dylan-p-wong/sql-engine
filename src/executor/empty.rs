@@ -1,6 +1,6 @@
 use crate::executor::Executor;
+use crate::types::error::Error;
 use crate::types::Chunk;
-use std::fmt::Error;
 use std::mem::swap;
 
 pub struct Empty {

@@ -1,9 +1,8 @@
-use std::fmt::Error;
-
 use sqlparser::ast::Expr;
 
 use crate::storage::parquet::ParquetReader;
 use crate::storage::{get_table_path, StorageReader};
+use crate::types::error::Error;
 use crate::types::{Chunk, Column};
 
 use super::Executor;

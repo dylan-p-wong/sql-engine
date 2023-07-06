@@ -1,9 +1,7 @@
-use std::fmt::Error;
-
 use parquet::record::Field;
 use sqlparser::ast::{BinaryOperator, Expr, Ident};
 
-use crate::types::{Column, Row};
+use crate::types::{error::Error, Column, Row};
 
 pub struct ExprEvaluator;
 
@@ -31,7 +29,7 @@ impl ExprEvaluator {
             }
             Expr::Identifier(ident) => Self::evaluate_identifier(ident, row, columns),
             Expr::Value(value) => Self::evaluate_value(value),
-            _ => Err(Error {}),
+            _ => Err(Error::Expression("Unsupported expression".to_string())),
         }
     }
 
@@ -46,7 +44,9 @@ impl ExprEvaluator {
             }
         }
 
-        Err(Error {})
+        Err(Error::Expression(
+            "Identifier not found in columns".to_string(),
+        ))
     }
 
     pub fn evaluate_binary_op(
@@ -57,7 +57,9 @@ impl ExprEvaluator {
         match op {
             BinaryOperator::NotEq => Ok(Field::Bool(left != right)),
             BinaryOperator::Eq => Ok(Field::Bool(left == right)),
-            _ => Err(Error {}),
+            _ => Err(Error::Expression(
+                "Binary operation not supported".to_string(),
+            )),
         }
     }
 
@@ -72,12 +74,12 @@ impl ExprEvaluator {
                 } else if n.parse::<f32>().is_ok() {
                     Ok(Field::Float(n.parse::<f32>().unwrap()))
                 } else {
-                    Err(Error {})
+                    Err(Error::Expression("Unable to parse Number".to_string()))
                 }
             }
             sqlparser::ast::Value::SingleQuotedString(s) => Ok(Field::Str(s.to_string())),
             sqlparser::ast::Value::Null => Ok(Field::Null),
-            _ => Err(Error {}),
+            _ => Err(Error::Expression("Value not supported".to_string())),
         }
     }
 }

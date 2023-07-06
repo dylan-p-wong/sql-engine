@@ -1,9 +1,8 @@
-use std::fmt::Error;
-
 use crate::executor;
 use crate::optimizer;
 use crate::parser;
 use crate::planner;
+use crate::types::error::Error;
 use crate::types::ResultSet;
 
 pub struct Database {
@@ -14,7 +13,7 @@ pub struct Database {
 }
 
 impl Database {
-    pub fn new() -> Result<Database, String> {
+    pub fn new() -> Result<Database, Error> {
         let parser = parser::SQLParser::new();
         let planner = planner::Planner::new();
         let optimizer = optimizer::Optimizer::new();

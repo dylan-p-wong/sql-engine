@@ -7,3 +7,6 @@ query B
 select 1=1
 ----
 true
+
+statement error Identifier not found in columns
+select column_dne

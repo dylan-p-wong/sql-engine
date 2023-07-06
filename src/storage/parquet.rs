@@ -2,9 +2,9 @@ use parquet::{
     file::reader::{FileReader, SerializedFileReader},
     record::reader::RowIter,
 };
-use std::{fmt::Error, fs::File, path::Path};
+use std::{fs::File, path::Path};
 
-use crate::types::{Chunk, Column, TupleValue};
+use crate::types::{error::Error, Chunk, Column, TupleValue};
 
 use super::StorageReader;
 
@@ -43,7 +43,9 @@ impl ParquetReader {
                 iter: reader.into_iter(),
             })
         } else {
-            Err(Error {})
+            Err(Error::Storage(
+                "Could not open file to read table metadata".to_string(),
+            ))
         }
     }
 
@@ -69,7 +71,9 @@ impl ParquetReader {
 
             Ok(headers)
         } else {
-            Err(Error {})
+            Err(Error::Storage(
+                "Could not open file to read table data".to_string(),
+            ))
         }
     }
 }

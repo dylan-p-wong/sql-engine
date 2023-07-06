@@ -1,8 +1,8 @@
 use crate::executor::expression::ExprEvaluator;
 use crate::executor::Executor;
+use crate::types::error::Error;
 use crate::types::{Chunk, Column, TupleValue};
 use sqlparser::ast::Expr;
-use std::fmt::Error;
 use std::mem::swap;
 
 use super::VECTOR_SIZE_THRESHOLD;
