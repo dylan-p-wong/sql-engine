@@ -1,19 +1,25 @@
-use sqlparser::ast::{Expr, Query, Select, SelectItem, SetExpr, Statement};
+use sqlparser::ast::{Expr, Query, Select, SelectItem, SetExpr, Statement, TableWithJoins};
 
 use crate::{
     storage::{get_table_path, parquet::ParquetReader},
     types::{error::Error, Column},
 };
 
+#[derive(Debug)]
 pub struct PlanNode {
     pub output_schema: Vec<Column>,
     pub node: Node,
 }
 
+#[derive(Debug)]
 pub enum Node {
     Scan {
         table_name: String,
         filter: Option<Expr>,
+    },
+    NestedLoopJoin {
+        child_left: Box<PlanNode>,
+        child_right: Box<PlanNode>,
     },
     Filter {
         filter: Expr,
@@ -30,8 +36,25 @@ pub struct Plan {
     pub root: PlanNode,
 }
 
-impl Plan {
-    pub fn new(statement: &Statement) -> Result<Plan, Error> {
+pub struct Planner {}
+
+impl Planner {
+    pub fn new() -> Planner {
+        Planner {}
+    }
+
+    pub fn build_statements(&self, statements: &Vec<Statement>) -> Result<Plan, Error> {
+        let mut plans: Vec<Plan> = Vec::new();
+
+        for statement in statements {
+            plans.push(self.build_statement(statement)?);
+        }
+
+        // TODO
+        Ok(plans.pop().unwrap())
+    }
+
+    fn build_statement(&self, statement: &Statement) -> Result<Plan, Error> {
         match statement {
             Statement::Query(query) => {
                 let Query { ref body, .. } = **query;
@@ -46,31 +69,7 @@ impl Plan {
                         } = &**select;
 
                         // Build FROM
-                        let node = if from.len() > 1 {
-                            return Err(Error::Planner("Multiple FROM not supported".to_string()));
-                        } else if from.is_empty() {
-                            PlanNode {
-                                output_schema: Vec::new(),
-                                node: Node::Empty {},
-                            }
-                        } else {
-                            let table_name = match &from[0].relation {
-                                sqlparser::ast::TableFactor::Table { name, .. } => name.to_string(),
-                                _ => {
-                                    return Err(Error::Planner("JOIN not supported".to_string()));
-                                }
-                            };
-
-                            let table_path = get_table_path(&table_name);
-
-                            PlanNode {
-                                output_schema: ParquetReader::read_metadata(&table_path)?,
-                                node: Node::Scan {
-                                    table_name,
-                                    filter: None,
-                                },
-                            }
-                        };
+                        let node = self.build_from_clause(from)?;
 
                         // Build WHERE
                         let node = if selection.is_some() {
@@ -121,23 +120,52 @@ impl Plan {
             )),
         }
     }
-}
 
-pub struct Planner {}
-
-impl Planner {
-    pub fn new() -> Planner {
-        Planner {}
-    }
-
-    pub fn build(&self, statements: &Vec<Statement>) -> Result<Plan, Error> {
-        let mut plans: Vec<Plan> = Vec::new();
-
-        for statement in statements {
-            plans.push(Plan::new(statement)?);
+    fn build_from_clause(&self, from: &Vec<TableWithJoins>) -> Result<PlanNode, Error> {
+        if from.is_empty() {
+            return Ok(PlanNode {
+                output_schema: Vec::new(),
+                node: Node::Empty {},
+            });
         }
 
-        // TODO
-        Ok(plans.pop().unwrap())
+        let mut node = self.build_table_with_joins(&from[0])?;
+
+        for table in &from[1..] {
+            let right = self.build_table_with_joins(table)?;
+
+            let mut output_schema = node.output_schema.clone();
+            output_schema.append(&mut right.output_schema.clone());
+
+            node = PlanNode {
+                output_schema,
+                node: Node::NestedLoopJoin {
+                    child_left: Box::new(node),
+                    child_right: Box::new(right),
+                },
+            };
+        }
+
+        Ok(node)
+    }
+
+    fn build_table_with_joins(&self, table: &TableWithJoins) -> Result<PlanNode, Error> {
+        match &table.relation {
+            sqlparser::ast::TableFactor::Table { name, .. } => {
+                let table_name = name.to_string();
+                let table_path = get_table_path(&table_name);
+
+                Ok(PlanNode {
+                    output_schema: ParquetReader::read_metadata(&table_path)?,
+                    node: Node::Scan {
+                        table_name,
+                        filter: None,
+                    },
+                })
+            }
+            _ => {
+                Err(Error::Planner("JOIN not supported".to_string()))
+            }
+        }
     }
 }

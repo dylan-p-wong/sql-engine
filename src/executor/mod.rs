@@ -1,6 +1,7 @@
 mod empty;
 mod expression;
 mod filter;
+mod nested_join;
 mod projection;
 mod scan;
 
@@ -9,7 +10,9 @@ use crate::{
     types::{error::Error, Chunk, Column, ResultSet},
 };
 
-use self::{empty::Empty, filter::Filter, projection::Projection, scan::Scan};
+use self::{
+    empty::Empty, filter::Filter, nested_join::NestedLoopJoin, projection::Projection, scan::Scan,
+};
 
 const VECTOR_SIZE_THRESHOLD: usize = 1024;
 
@@ -53,6 +56,19 @@ impl ExecutorBuilder {
                 Ok(e) => Ok(e),
                 Err(e) => Err(e),
             },
+            Node::NestedLoopJoin {
+                child_left,
+                child_right,
+            } => {
+                let child_left = Self::build(*child_left)?;
+                let child_right = Self::build(*child_right)?;
+
+                match NestedLoopJoin::new(child_left, child_right, plan_node.output_schema.clone())
+                {
+                    Ok(e) => Ok(e),
+                    Err(e) => Err(e),
+                }
+            }
         }
     }
 }
