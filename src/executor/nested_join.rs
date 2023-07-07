@@ -29,6 +29,7 @@ impl NestedLoopJoin {
     }
 
     fn init_right_rows(&mut self) -> Result<(), Error> {
+        // TODO: consider when right rows is too large to fit in memory
         let mut res = Vec::new();
         if self.right_rows.is_none() {
             loop {
@@ -40,8 +41,8 @@ impl NestedLoopJoin {
                     res.push(row)
                 }
             }
+            self.right_rows = Some(res);
         }
-        self.right_rows = Some(res);
         Ok(())
     }
 }
