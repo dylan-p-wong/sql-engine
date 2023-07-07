@@ -29,7 +29,7 @@ impl Database {
 
     pub fn execute(&self, sql: &str) -> Result<ResultSet, Error> {
         let ast = self.parser.parse(sql)?;
-        let plan = self.planner.build(&ast)?;
+        let plan = self.planner.build_statements(&ast)?;
         let optimized_plan = self.optimizer.optimize(plan)?;
         let result_set = self.executor.execute(optimized_plan)?;
         Ok(result_set)
