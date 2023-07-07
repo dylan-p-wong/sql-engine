@@ -1,4 +1,4 @@
-use std::{mem::swap};
+use std::mem::swap;
 
 use crate::types::{error::Error, Chunk, Column, Row};
 
