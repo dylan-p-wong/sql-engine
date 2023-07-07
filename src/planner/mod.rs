@@ -163,9 +163,7 @@ impl Planner {
                     },
                 })
             }
-            _ => {
-                Err(Error::Planner("JOIN not supported".to_string()))
-            }
+            _ => Err(Error::Planner("JOIN not supported".to_string())),
         }
     }
 }
