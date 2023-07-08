@@ -35,3 +35,15 @@ select * from 'tests/resources/data/animals2.parquet' JOIN 'tests/resources/data
 query II
 select * from 'tests/resources/data/animals2.parquet' INNER JOIN 'tests/resources/data/animals2.parquet' ON false
 ----
+
+query II
+select * from 'tests/resources/data/animals2.parquet' JOIN 'tests/resources/data/animals2.parquet', 'tests/resources/data/animals2.parquet'
+----
+"dog" 1 "dog" 1 "dog" 1
+"dog" 1 "dog" 1 "dog" 2
+"dog" 1 "dog" 2 "dog" 1
+"dog" 1 "dog" 2 "dog" 2
+"dog" 2 "dog" 1 "dog" 1
+"dog" 2 "dog" 1 "dog" 2
+"dog" 2 "dog" 2 "dog" 1
+"dog" 2 "dog" 2 "dog" 2
