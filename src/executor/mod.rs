@@ -59,12 +59,17 @@ impl ExecutorBuilder {
             Node::NestedLoopJoin {
                 child_left,
                 child_right,
+                predicate,
             } => {
                 let child_left = Self::build(*child_left)?;
                 let child_right = Self::build(*child_right)?;
 
-                match NestedLoopJoin::new(child_left, child_right, plan_node.output_schema.clone())
-                {
+                match NestedLoopJoin::new(
+                    child_left,
+                    child_right,
+                    predicate,
+                    plan_node.output_schema.clone(),
+                ) {
                     Ok(e) => Ok(e),
                     Err(e) => Err(e),
                 }

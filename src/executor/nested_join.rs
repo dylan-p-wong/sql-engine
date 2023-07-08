@@ -1,11 +1,14 @@
 use std::mem::swap;
 
+use sqlparser::ast::Expr;
+
 use crate::types::{error::Error, Chunk, Column, Row};
 
-use super::{Executor, VECTOR_SIZE_THRESHOLD};
+use super::{expression::ExprEvaluator, Executor, VECTOR_SIZE_THRESHOLD};
 
 pub struct NestedLoopJoin {
     output_schema: Vec<Column>,
+    predicate: Option<Expr>,
     child_left: Box<dyn Executor>,
     child_right: Box<dyn Executor>,
 
@@ -17,11 +20,13 @@ impl NestedLoopJoin {
     pub fn new(
         child_left: Box<dyn Executor>,
         child_right: Box<dyn Executor>,
+        predicate: Option<Expr>,
         output_schema: Vec<Column>,
     ) -> Result<Box<NestedLoopJoin>, Error> {
         Ok(Box::new(NestedLoopJoin {
             buffer: Chunk::default(),
             right_rows: None,
+            predicate,
             child_left,
             child_right,
             output_schema,
@@ -60,9 +65,20 @@ impl Executor for NestedLoopJoin {
 
             for left_row in next_chunk.data_chunks {
                 for right_row in self.right_rows.as_ref().unwrap().iter() {
-                    // TODO: add join condition here
                     let mut new_row = left_row.clone();
                     new_row.append(&mut right_row.clone());
+
+                    if self.predicate.is_some() {
+                        let e = ExprEvaluator::evaluate(
+                            self.predicate.as_ref().unwrap(),
+                            &new_row,
+                            &self.output_schema,
+                        )?;
+                        if !ExprEvaluator::is_truthy(&e) {
+                            continue;
+                        }
+                    }
+
                     self.buffer.data_chunks.push(new_row);
                 }
             }
