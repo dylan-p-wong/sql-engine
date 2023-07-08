@@ -77,9 +77,10 @@ impl ExprEvaluator {
                     Err(Error::Expression("Unable to parse Number".to_string()))
                 }
             }
+            sqlparser::ast::Value::Boolean(b) => Ok(Field::Bool(*b)),
             sqlparser::ast::Value::SingleQuotedString(s) => Ok(Field::Str(s.to_string())),
             sqlparser::ast::Value::Null => Ok(Field::Null),
-            _ => Err(Error::Expression("Value not supported".to_string())),
+            _ => Err(Error::Expression(format!("Unsupported value: {}", value))),
         }
     }
 }

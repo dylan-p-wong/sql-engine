@@ -1,0 +1,37 @@
+query II
+select * from 'tests/resources/data/animals2.parquet'
+----
+"dog" 1
+"dog" 2
+
+query II
+select * from 'tests/resources/data/animals2.parquet' INNER JOIN 'tests/resources/data/animals2.parquet' INNER JOIN 'tests/resources/data/animals2.parquet' ON true
+----
+"dog" 1 "dog" 1 "dog" 1
+"dog" 1 "dog" 1 "dog" 2
+"dog" 1 "dog" 2 "dog" 1
+"dog" 1 "dog" 2 "dog" 2
+"dog" 2 "dog" 1 "dog" 1
+"dog" 2 "dog" 1 "dog" 2
+"dog" 2 "dog" 2 "dog" 1
+"dog" 2 "dog" 2 "dog" 2
+
+query II
+select * from 'tests/resources/data/animals2.parquet' INNER JOIN 'tests/resources/data/animals2.parquet'
+----
+"dog" 1 "dog" 1
+"dog" 1 "dog" 2
+"dog" 2 "dog" 1
+"dog" 2 "dog" 2
+
+query II
+select * from 'tests/resources/data/animals2.parquet' JOIN 'tests/resources/data/animals2.parquet'
+----
+"dog" 1 "dog" 1
+"dog" 1 "dog" 2
+"dog" 2 "dog" 1
+"dog" 2 "dog" 2
+
+query II
+select * from 'tests/resources/data/animals2.parquet' INNER JOIN 'tests/resources/data/animals2.parquet' ON false
+----

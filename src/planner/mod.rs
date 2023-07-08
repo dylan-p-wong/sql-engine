@@ -1,4 +1,6 @@
-use sqlparser::ast::{Expr, Query, Select, SelectItem, SetExpr, Statement, TableWithJoins};
+use sqlparser::ast::{
+    Expr, Query, Select, SelectItem, SetExpr, Statement, TableFactor, TableWithJoins,
+};
 
 use crate::{
     storage::{get_table_path, parquet::ParquetReader},
@@ -20,6 +22,7 @@ pub enum Node {
     NestedLoopJoin {
         child_left: Box<PlanNode>,
         child_right: Box<PlanNode>,
+        predicate: Option<Expr>,
     },
     Filter {
         filter: Expr,
@@ -142,6 +145,7 @@ impl Planner {
                 node: Node::NestedLoopJoin {
                     child_left: Box::new(node),
                     child_right: Box::new(right),
+                    predicate: None,
                 },
             };
         }
@@ -150,7 +154,38 @@ impl Planner {
     }
 
     fn build_table_with_joins(&self, table: &TableWithJoins) -> Result<PlanNode, Error> {
-        match &table.relation {
+        let mut node = self.build_table_factor(&table.relation)?;
+
+        for join in &table.joins {
+            let right = self.build_table_factor(&join.relation)?;
+
+            let mut output_schema = node.output_schema.clone();
+            output_schema.append(&mut right.output_schema.clone());
+
+            match &join.join_operator {
+                sqlparser::ast::JoinOperator::Inner(join_constraint) => {
+                    node = PlanNode {
+                        output_schema,
+                        node: Node::NestedLoopJoin {
+                            child_left: Box::new(node),
+                            child_right: Box::new(right),
+                            predicate: match &join_constraint {
+                                sqlparser::ast::JoinConstraint::On(ref expr) => Some(expr.clone()),
+                                sqlparser::ast::JoinConstraint::None => None,
+                                _ => return Err(Error::Planner("Only ON supported".to_string())),
+                            },
+                        },
+                    };
+                }
+                _ => return Err(Error::Planner("Only INNER JOIN supported".to_string())),
+            }
+        }
+
+        Ok(node)
+    }
+
+    fn build_table_factor(&self, table: &TableFactor) -> Result<PlanNode, Error> {
+        match table {
             sqlparser::ast::TableFactor::Table { name, .. } => {
                 let table_name = name.to_string();
                 let table_path = get_table_path(&table_name);
