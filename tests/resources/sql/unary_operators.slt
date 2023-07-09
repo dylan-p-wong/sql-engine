@@ -1,0 +1,27 @@
+query I
+select NOT false
+----
+true
+
+query I
+select NOT 2=1*2
+----
+false
+
+query I
+select NOT 2=1*2
+----
+false
+
+query I
+select +2
+----
+2
+
+query I
+select -2
+----
+-2
+
+statement error Expression Error: Unsupported unary operation: - "test"
+select -'test'

@@ -1,5 +1,5 @@
 use parquet::record::Field;
-use sqlparser::ast::{BinaryOperator, Expr, Ident};
+use sqlparser::ast::{BinaryOperator, Expr, Ident, UnaryOperator};
 
 use crate::{
     planner::OutputSchema,
@@ -24,6 +24,7 @@ impl ExprEvaluator {
 
     pub fn evaluate(expr: &Expr, row: &Row, columns: &OutputSchema) -> Result<Field, Error> {
         match expr {
+            Expr::UnaryOp { op, expr } => Self::evaluate_unary_op(op, expr, row, columns),
             Expr::BinaryOp { left, op, right } => {
                 let left = Self::evaluate(left, row, columns)?;
                 let right = Self::evaluate(right, row, columns)?;
@@ -57,6 +58,42 @@ impl ExprEvaluator {
     ) -> Result<Field, Error> {
         let index = output_schema.resolve(&ident.value)?;
         Ok(row[index].value.clone())
+    }
+
+    pub fn evaluate_unary_op(
+        op: &UnaryOperator,
+        expr: &Expr,
+        row: &Row,
+        columns: &OutputSchema,
+    ) -> Result<Field, Error> {
+        let field = Self::evaluate(expr, row, columns)?;
+        match op {
+            UnaryOperator::Not => Ok(Field::Bool(!Self::to_boolean(&field))),
+            UnaryOperator::Plus => match field {
+                Field::Int(i) => Ok(Field::Int(i)),
+                Field::Long(l) => Ok(Field::Long(l)),
+                Field::Float(f) => Ok(Field::Float(f)),
+                Field::Double(d) => Ok(Field::Double(d)),
+                _ => Err(Error::Expression(format!(
+                    "Unsupported unary operation: {} {}",
+                    op, field
+                ))),
+            },
+            UnaryOperator::Minus => match field {
+                Field::Int(i) => Ok(Field::Int(-i)),
+                Field::Long(l) => Ok(Field::Long(-l)),
+                Field::Float(f) => Ok(Field::Float(-f)),
+                Field::Double(d) => Ok(Field::Double(-d)),
+                _ => Err(Error::Expression(format!(
+                    "Unsupported unary operation: {} {}",
+                    op, field
+                ))),
+            },
+            _ => Err(Error::Expression(format!(
+                "Unsupported unary operation: {} {}",
+                op, field
+            ))),
+        }
     }
 
     pub fn evaluate_binary_op(
