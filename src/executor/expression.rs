@@ -9,7 +9,7 @@ use crate::{
 pub struct ExprEvaluator;
 
 impl ExprEvaluator {
-    pub fn is_truthy(field: &Field) -> bool {
+    pub fn to_boolean(field: &Field) -> bool {
         match field {
             Field::Bool(b) => *b,
             Field::Int(i) => *i != 0,
@@ -67,9 +67,28 @@ impl ExprEvaluator {
         match op {
             BinaryOperator::NotEq => Ok(Field::Bool(left != right)),
             BinaryOperator::Eq => Ok(Field::Bool(left == right)),
-            _ => Err(Error::Expression(
-                "Binary operation not supported".to_string(),
+            BinaryOperator::And => Ok(Field::Bool(
+                Self::to_boolean(left) && Self::to_boolean(right),
             )),
+            BinaryOperator::Or => Ok(Field::Bool(
+                Self::to_boolean(left) || Self::to_boolean(right),
+            )),
+            BinaryOperator::Xor => Ok(Field::Bool(
+                (Self::to_boolean(left) && !Self::to_boolean(right))
+                    || (!Self::to_boolean(left) && Self::to_boolean(right)),
+            )),
+            BinaryOperator::Plus => Ok(BinaryOpEvaluator::add(left, right)?),
+            BinaryOperator::Minus => Ok(BinaryOpEvaluator::subtract(left, right)?),
+            BinaryOperator::Multiply => Ok(BinaryOpEvaluator::multipy(left, right)?),
+            BinaryOperator::Divide => Ok(BinaryOpEvaluator::divide(left, right)?),
+            BinaryOperator::Lt => Ok(BinaryOpEvaluator::less_than(left, right)?),
+            BinaryOperator::LtEq => Ok(BinaryOpEvaluator::less_than_or_equal(left, right)?),
+            BinaryOperator::Gt => Ok(BinaryOpEvaluator::greater_than(left, right)?),
+            BinaryOperator::GtEq => Ok(BinaryOpEvaluator::greater_than_or_equal(left, right)?),
+            _ => Err(Error::Expression(format!(
+                "Binary operation {} not supported",
+                op
+            ))),
         }
     }
 
@@ -92,5 +111,98 @@ impl ExprEvaluator {
             sqlparser::ast::Value::Null => Ok(Field::Null),
             _ => Err(Error::Expression(format!("Unsupported value: {}", value))),
         }
+    }
+}
+
+pub struct BinaryOpEvaluator;
+
+impl BinaryOpEvaluator {
+    fn add(left: &Field, right: &Field) -> Result<Field, Error> {
+        match (left, right) {
+            (Field::Int(l), Field::Int(r)) => Ok(Field::Int(l + r)),
+            (Field::Long(l), Field::Long(r)) => Ok(Field::Long(l + r)),
+            (Field::Float(l), Field::Float(r)) => Ok(Field::Float(l + r)),
+            (Field::Double(l), Field::Double(r)) => Ok(Field::Double(l + r)),
+            (Field::Str(l), Field::Str(r)) => Ok(Field::Str(format!("{}{}", l, r))),
+            _ => Err(Error::Expression(format!(
+                "Unsupported binary operation: {} + {}",
+                left, right
+            ))),
+        }
+    }
+
+    fn subtract(left: &Field, right: &Field) -> Result<Field, Error> {
+        match (left, right) {
+            (Field::Int(l), Field::Int(r)) => Ok(Field::Int(l - r)),
+            (Field::Long(l), Field::Long(r)) => Ok(Field::Long(l - r)),
+            (Field::Float(l), Field::Float(r)) => Ok(Field::Float(l - r)),
+            (Field::Double(l), Field::Double(r)) => Ok(Field::Double(l - r)),
+            _ => Err(Error::Expression(format!(
+                "Unsupported binary operation: {} - {}",
+                left, right
+            ))),
+        }
+    }
+
+    fn multipy(left: &Field, right: &Field) -> Result<Field, Error> {
+        match (left, right) {
+            (Field::Int(l), Field::Int(r)) => Ok(Field::Int(l * r)),
+            (Field::Long(l), Field::Long(r)) => Ok(Field::Long(l * r)),
+            (Field::Float(l), Field::Float(r)) => Ok(Field::Float(l * r)),
+            (Field::Double(l), Field::Double(r)) => Ok(Field::Double(l * r)),
+            _ => Err(Error::Expression(format!(
+                "Unsupported binary operation: {} * {}",
+                left, right
+            ))),
+        }
+    }
+
+    fn divide(left: &Field, right: &Field) -> Result<Field, Error> {
+        match (left, right) {
+            (Field::Int(l), Field::Int(r)) => Ok(Field::Int(l / r)),
+            (Field::Long(l), Field::Long(r)) => Ok(Field::Long(l / r)),
+            (Field::Float(l), Field::Float(r)) => Ok(Field::Float(l / r)),
+            (Field::Double(l), Field::Double(r)) => Ok(Field::Double(l / r)),
+            _ => Err(Error::Expression(format!(
+                "Unsupported binary operation: {} / {}",
+                left, right
+            ))),
+        }
+    }
+
+    fn less_than(left: &Field, right: &Field) -> Result<Field, Error> {
+        match (left, right) {
+            (Field::Int(l), Field::Int(r)) => Ok(Field::Bool(l < r)),
+            (Field::Long(l), Field::Long(r)) => Ok(Field::Bool(l < r)),
+            (Field::Float(l), Field::Float(r)) => Ok(Field::Bool(l < r)),
+            (Field::Double(l), Field::Double(r)) => Ok(Field::Bool(l < r)),
+            (Field::Str(l), Field::Str(r)) => Ok(Field::Bool(l < r)),
+            _ => Err(Error::Expression(format!(
+                "Unsupported binary operation: {} < {}",
+                left, right
+            ))),
+        }
+    }
+
+    fn greater_than(left: &Field, right: &Field) -> Result<Field, Error> {
+        Self::less_than(right, left)
+    }
+
+    fn less_than_or_equal(left: &Field, right: &Field) -> Result<Field, Error> {
+        match (left, right) {
+            (Field::Int(l), Field::Int(r)) => Ok(Field::Bool(l <= r)),
+            (Field::Long(l), Field::Long(r)) => Ok(Field::Bool(l <= r)),
+            (Field::Float(l), Field::Float(r)) => Ok(Field::Bool(l <= r)),
+            (Field::Double(l), Field::Double(r)) => Ok(Field::Bool(l <= r)),
+            (Field::Str(l), Field::Str(r)) => Ok(Field::Bool(l <= r)),
+            _ => Err(Error::Expression(format!(
+                "Unsupported binary operation: {} =< {}",
+                left, right
+            ))),
+        }
+    }
+
+    fn greater_than_or_equal(left: &Field, right: &Field) -> Result<Field, Error> {
+        Self::less_than_or_equal(right, left)
     }
 }

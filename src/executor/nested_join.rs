@@ -77,7 +77,7 @@ impl Executor for NestedLoopJoin {
                             &new_row,
                             &self.output_schema,
                         )?;
-                        if !ExprEvaluator::is_truthy(&e) {
+                        if !ExprEvaluator::to_boolean(&e) {
                             continue;
                         }
                     }
