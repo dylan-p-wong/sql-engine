@@ -3,6 +3,8 @@ use std::fmt;
 use parquet::record::Field;
 use tabled::{builder::Builder, settings::Style};
 
+use crate::planner::OutputSchema;
+
 pub mod error;
 
 #[derive(Debug, Clone)]
@@ -34,7 +36,30 @@ pub type Row = Vec<TupleValue>;
 
 #[derive(Debug, Clone)]
 pub struct Column {
-    pub name: String,
+    pub label: Option<String>,
+    pub table: Option<String>,
+    pub column_name: String,
+}
+
+impl Column {
+    pub fn new(label: Option<String>, name: String) -> Column {
+        let mut table = None;
+        let column_name;
+
+        if name.contains('.') {
+            let parts: Vec<_> = name.split('.').collect();
+            table = Some(parts[0].to_string());
+            column_name = parts[1];
+        } else {
+            column_name = &name;
+        }
+
+        Column {
+            label,
+            table,
+            column_name: column_name.to_string(),
+        }
+    }
 }
 
 #[derive(Default, Clone)]
@@ -44,12 +69,12 @@ pub struct Chunk {
 
 #[derive(Default)]
 pub struct ResultSet {
-    pub output_schema: Vec<Column>,
+    pub output_schema: OutputSchema,
     pub data_chunks: Vec<Chunk>,
 }
 
 impl ResultSet {
-    pub fn new(output_schema: Vec<Column>) -> ResultSet {
+    pub fn new(output_schema: OutputSchema) -> ResultSet {
         ResultSet {
             output_schema,
             data_chunks: Vec::new(),
@@ -61,11 +86,7 @@ impl fmt::Display for ResultSet {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let mut builder = Builder::default();
 
-        let headers = self
-            .output_schema
-            .iter()
-            .map(|x| x.name.clone())
-            .collect::<Vec<String>>();
+        let headers = self.output_schema.get_headers();
         builder.set_header(headers);
 
         for chunk in self.data_chunks.iter() {

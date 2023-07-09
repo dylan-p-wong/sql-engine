@@ -8,5 +8,18 @@ select 1=1
 ----
 true
 
-statement error Identifier not found in columns
+statement error Planner Error: Field not found: column_dne
 select column_dne
+
+statement error Planner Error: Invalid field name: a.b.c
+select a.b.c from 'tests/resources/data/animals2.parquet'
+
+query IIII
+select animal from 'tests/resources/data/animals1.parquet' as animals
+----
+"dog"
+"dog"
+"cat"
+"cat"
+"rhino"
+"rhino"

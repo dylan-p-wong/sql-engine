@@ -2,3 +2,13 @@ query II
 select id, salary from 'tests/resources/data/userdata1.parquet' where id=777
 ----
 777 42559.27
+
+query II
+select users.id, salary from 'tests/resources/data/userdata1.parquet' as users where users.id=777
+----
+777 42559.27
+
+query II
+select users.id, users.salary from 'tests/resources/data/userdata1.parquet' as users where users.id=777
+----
+777 42559.27

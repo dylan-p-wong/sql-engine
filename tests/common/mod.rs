@@ -8,7 +8,7 @@ impl sqllogictest::DB for DatabaseTestHelper {
     type ColumnType = DefaultColumnType;
     fn run(&mut self, sql: &str) -> Result<sqllogictest::DBOutput<Self::ColumnType>, Self::Error> {
         let result_set = self.0.execute(sql)?;
-        let types = vec![DefaultColumnType::Any; result_set.output_schema.len()];
+        let types = vec![DefaultColumnType::Any; result_set.output_schema.columns.len()];
         let rows = result_set
             .data_chunks
             .iter()

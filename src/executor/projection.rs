@@ -2,14 +2,15 @@ use std::mem::swap;
 
 use crate::{
     executor::expression::ExprEvaluator,
-    types::{error::Error, Chunk, Column, Row, TupleValue},
+    planner::OutputSchema,
+    types::{error::Error, Chunk, Row, TupleValue},
 };
 use sqlparser::ast::SelectItem;
 
 use super::{Executor, VECTOR_SIZE_THRESHOLD};
 
 pub struct Projection {
-    output_schema: Vec<Column>,
+    output_schema: OutputSchema,
     select: Vec<SelectItem>,
     child: Box<dyn Executor>,
 
@@ -20,7 +21,7 @@ impl Projection {
     pub fn new(
         child: Box<dyn Executor>,
         select: Vec<SelectItem>,
-        output_schema: Vec<Column>,
+        output_schema: OutputSchema,
     ) -> Result<Box<Projection>, Error> {
         Ok(Box::new(Projection {
             buffer: Chunk::default(),
@@ -78,7 +79,7 @@ impl Executor for Projection {
         })
     }
 
-    fn get_output_schema(&self) -> Vec<Column> {
+    fn get_output_schema(&self) -> OutputSchema {
         self.output_schema.clone()
     }
 }
