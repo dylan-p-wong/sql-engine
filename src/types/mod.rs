@@ -26,6 +26,7 @@ impl From<&TupleValue> for std::string::String {
             Field::Int(i) => i.to_string(),
             Field::Float(f) => f.to_string(),
             Field::Double(d) => d.to_string(),
+            Field::Str(s) => s.to_string(),
             Field::Null => String::from("NULL"),
             _ => String::from("-"),
         }

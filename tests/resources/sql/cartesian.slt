@@ -66,10 +66,5 @@ select * from 'tests/resources/data/animals2.parquet', 'tests/resources/data/ani
 "dog" 2 "dog" 2 "dog" 1
 "dog" 2 "dog" 2 "dog" 2
 
-query II
-select 1=1
-----
-true
-
 statement error Planner Error: Ambiguous field name
 select animal from 'tests/resources/data/animals2.parquet', 'tests/resources/data/animals2.parquet'

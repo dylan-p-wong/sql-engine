@@ -76,7 +76,6 @@ impl OutputSchema {
         }
 
         if result_index.is_none() {
-            println!("{:?}", self.columns);
             return Err(Error::Planner(format!("Field not found: {}", name)));
         }
 

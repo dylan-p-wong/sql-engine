@@ -12,3 +12,9 @@ query II
 select users.id, users.salary from 'tests/resources/data/userdata1.parquet' as users where users.id=777
 ----
 777 42559.27
+
+query II
+select animal, sex, age from 'tests/resources/data/animals1.parquet' as users where animal='rhino'
+----
+"rhino" "F" 5
+"rhino" "F" 6
