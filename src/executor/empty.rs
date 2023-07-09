@@ -1,4 +1,5 @@
 use crate::executor::Executor;
+use crate::planner::OutputSchema;
 use crate::types::error::Error;
 use crate::types::Chunk;
 use std::mem::swap;
@@ -26,7 +27,7 @@ impl Executor for Empty {
         })
     }
 
-    fn get_output_schema(&self) -> Vec<crate::types::Column> {
-        vec![]
+    fn get_output_schema(&self) -> OutputSchema {
+        OutputSchema::new()
     }
 }

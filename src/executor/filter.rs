@@ -1,14 +1,15 @@
 use crate::executor::expression::ExprEvaluator;
 use crate::executor::Executor;
+use crate::planner::OutputSchema;
 use crate::types::error::Error;
-use crate::types::{Chunk, Column, TupleValue};
+use crate::types::{Chunk, TupleValue};
 use sqlparser::ast::Expr;
 use std::mem::swap;
 
 use super::VECTOR_SIZE_THRESHOLD;
 
 pub struct Filter {
-    output_schema: Vec<Column>,
+    output_schema: OutputSchema,
     filter: Expr,
     child: Box<dyn Executor>,
 
@@ -19,7 +20,7 @@ impl Filter {
     pub fn new(
         child: Box<dyn Executor>,
         filter: Expr,
-        output_schema: Vec<Column>,
+        output_schema: OutputSchema,
     ) -> Result<Box<Filter>, Error> {
         Ok(Box::new(Filter {
             filter,
@@ -68,7 +69,7 @@ impl Executor for Filter {
         })
     }
 
-    fn get_output_schema(&self) -> Vec<Column> {
+    fn get_output_schema(&self) -> OutputSchema {
         self.output_schema.clone()
     }
 }

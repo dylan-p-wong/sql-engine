@@ -1,7 +1,10 @@
 use parquet::record::Field;
 use sqlparser::ast::{BinaryOperator, Expr, Ident};
 
-use crate::types::{error::Error, Column, Row};
+use crate::{
+    planner::OutputSchema,
+    types::{error::Error, Row},
+};
 
 pub struct ExprEvaluator;
 
@@ -19,7 +22,7 @@ impl ExprEvaluator {
         }
     }
 
-    pub fn evaluate(expr: &Expr, row: &Row, columns: &Vec<Column>) -> Result<Field, Error> {
+    pub fn evaluate(expr: &Expr, row: &Row, columns: &OutputSchema) -> Result<Field, Error> {
         match expr {
             Expr::BinaryOp { left, op, right } => {
                 let left = Self::evaluate(left, row, columns)?;
@@ -29,24 +32,31 @@ impl ExprEvaluator {
             }
             Expr::Identifier(ident) => Self::evaluate_identifier(ident, row, columns),
             Expr::Value(value) => Self::evaluate_value(value),
-            _ => Err(Error::Expression("Unsupported expression".to_string())),
+            Expr::CompoundIdentifier(idents) => Self::evaluate_identifier(
+                &Ident::new(
+                    idents
+                        .iter()
+                        .map(|i| i.value.clone())
+                        .collect::<Vec<String>>()
+                        .join("."),
+                ),
+                row,
+                columns,
+            ),
+            _ => Err(Error::Expression(format!(
+                "Unsupported expression: {}",
+                expr
+            ))),
         }
     }
 
     pub fn evaluate_identifier(
         ident: &Ident,
         row: &Row,
-        columns: &[Column],
+        output_schema: &OutputSchema,
     ) -> Result<Field, Error> {
-        for (i, column) in columns.iter().enumerate() {
-            if column.name == ident.value {
-                return Ok(row[i].value.clone());
-            }
-        }
-
-        Err(Error::Expression(
-            "Identifier not found in columns".to_string(),
-        ))
+        let index = output_schema.resolve(&ident.value)?;
+        Ok(row[index].value.clone())
     }
 
     pub fn evaluate_binary_op(

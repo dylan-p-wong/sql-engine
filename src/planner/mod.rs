@@ -7,9 +7,85 @@ use crate::{
     types::{error::Error, Column},
 };
 
+#[derive(Debug, Default, Clone)]
+pub struct OutputSchema {
+    pub columns: Vec<Column>,
+}
+
+impl OutputSchema {
+    pub fn new() -> OutputSchema {
+        OutputSchema {
+            columns: Vec::new(),
+        }
+    }
+
+    pub fn get_headers(&self) -> Vec<String> {
+        self.columns
+            .iter()
+            .map(|x| x.label.as_ref().unwrap_or(&x.column_name).clone())
+            .collect::<Vec<String>>()
+    }
+
+    pub fn append(&mut self, output_schema: &OutputSchema) -> Result<(), Error> {
+        for column in &output_schema.columns {
+            self.add_column(column.clone())?;
+        }
+        Ok(())
+    }
+
+    pub fn add_column(&mut self, column: Column) -> Result<(), Error> {
+        self.columns.push(column);
+        Ok(())
+    }
+
+    pub fn resolve(&self, name: &str) -> Result<usize, Error> {
+        let mut table_name = None;
+        let field_name;
+
+        if name.contains('.') {
+            let parts: Vec<_> = name.split('.').collect();
+
+            if parts.len() != 2 {
+                return Err(Error::Planner(format!("Invalid field name: {}", name)));
+            }
+
+            table_name = Some(parts[0]);
+            field_name = Some(parts[1]);
+        } else {
+            field_name = Some(name);
+        }
+
+        let mut result_index = None;
+
+        for (i, column) in self.columns.iter().enumerate() {
+            if table_name.is_some()
+                && (column.table.is_none() || table_name.unwrap() != column.table.as_ref().unwrap())
+            {
+                continue;
+            }
+
+            if field_name.is_some() && field_name.unwrap() != column.column_name {
+                continue;
+            }
+
+            if result_index.is_some() {
+                return Err(Error::Planner("Ambiguous field name".to_string()));
+            }
+
+            result_index = Some(i);
+        }
+
+        if result_index.is_none() {
+            return Err(Error::Planner(format!("Field not found: {}", name)));
+        }
+
+        Ok(result_index.unwrap())
+    }
+}
+
 #[derive(Debug)]
 pub struct PlanNode {
-    pub output_schema: Vec<Column>,
+    pub output_schema: OutputSchema,
     pub node: Node,
 }
 
@@ -94,12 +170,28 @@ impl Planner {
                             let headers = if select.len() == 1 && select[0].to_string() == "*" {
                                 node.output_schema.clone()
                             } else {
-                                select
-                                    .iter()
-                                    .map(|x| Column {
-                                        name: x.to_string(),
-                                    })
-                                    .collect::<Vec<Column>>()
+                                let mut output_schema = OutputSchema::new();
+                                for item in &select {
+                                    match item {
+                                        SelectItem::UnnamedExpr(expr) => {
+                                            output_schema
+                                                .add_column(Column::new(None, expr.to_string()))?;
+                                        }
+                                        SelectItem::ExprWithAlias { expr, alias } => {
+                                            output_schema.add_column(Column::new(
+                                                Some(alias.value.clone()),
+                                                expr.to_string(),
+                                            ))?;
+                                        }
+                                        _ => {
+                                            return Err(Error::Planner(
+                                                "Only UnnamedExpr and ExprWithAlias supported"
+                                                    .to_string(),
+                                            ))
+                                        }
+                                    }
+                                }
+                                output_schema
                             };
 
                             PlanNode {
@@ -127,7 +219,7 @@ impl Planner {
     fn build_from_clause(&self, from: &Vec<TableWithJoins>) -> Result<PlanNode, Error> {
         if from.is_empty() {
             return Ok(PlanNode {
-                output_schema: Vec::new(),
+                output_schema: OutputSchema::new(),
                 node: Node::Empty {},
             });
         }
@@ -138,7 +230,7 @@ impl Planner {
             let right = self.build_table_with_joins(table)?;
 
             let mut output_schema = node.output_schema.clone();
-            output_schema.append(&mut right.output_schema.clone());
+            output_schema.append(&right.output_schema)?;
 
             node = PlanNode {
                 output_schema,
@@ -160,7 +252,7 @@ impl Planner {
             let right = self.build_table_factor(&join.relation)?;
 
             let mut output_schema = node.output_schema.clone();
-            output_schema.append(&mut right.output_schema.clone());
+            output_schema.append(&right.output_schema)?;
 
             match &join.join_operator {
                 sqlparser::ast::JoinOperator::Inner(join_constraint) => {
@@ -186,12 +278,23 @@ impl Planner {
 
     fn build_table_factor(&self, table: &TableFactor) -> Result<PlanNode, Error> {
         match table {
-            sqlparser::ast::TableFactor::Table { name, .. } => {
+            sqlparser::ast::TableFactor::Table { name, alias, .. } => {
                 let table_name = name.to_string();
                 let table_path = get_table_path(&table_name);
 
+                let mut output_schema = ParquetReader::read_metadata(&table_path)?;
+
+                // we add a table name to each column
+                for column in &mut output_schema.columns {
+                    if alias.is_some() {
+                        column.table = Some(alias.as_ref().unwrap().to_string());
+                    } else {
+                        column.table = Some(table_name.clone());
+                    }
+                }
+
                 Ok(PlanNode {
-                    output_schema: ParquetReader::read_metadata(&table_path)?,
+                    output_schema,
                     node: Node::Scan {
                         table_name,
                         filter: None,

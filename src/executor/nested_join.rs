@@ -2,12 +2,15 @@ use std::mem::swap;
 
 use sqlparser::ast::Expr;
 
-use crate::types::{error::Error, Chunk, Column, Row};
+use crate::{
+    planner::OutputSchema,
+    types::{error::Error, Chunk, Row},
+};
 
 use super::{expression::ExprEvaluator, Executor, VECTOR_SIZE_THRESHOLD};
 
 pub struct NestedLoopJoin {
-    output_schema: Vec<Column>,
+    output_schema: OutputSchema,
     predicate: Option<Expr>,
     child_left: Box<dyn Executor>,
     child_right: Box<dyn Executor>,
@@ -21,7 +24,7 @@ impl NestedLoopJoin {
         child_left: Box<dyn Executor>,
         child_right: Box<dyn Executor>,
         predicate: Option<Expr>,
-        output_schema: Vec<Column>,
+        output_schema: OutputSchema,
     ) -> Result<Box<NestedLoopJoin>, Error> {
         Ok(Box::new(NestedLoopJoin {
             buffer: Chunk::default(),
@@ -94,7 +97,7 @@ impl Executor for NestedLoopJoin {
             data_chunks: res_chunks,
         })
     }
-    fn get_output_schema(&self) -> Vec<Column> {
+    fn get_output_schema(&self) -> OutputSchema {
         self.output_schema.clone()
     }
 }

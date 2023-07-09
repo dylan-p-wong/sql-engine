@@ -47,3 +47,19 @@ select * from 'tests/resources/data/animals2.parquet' JOIN 'tests/resources/data
 "dog" 2 "dog" 1 "dog" 2
 "dog" 2 "dog" 2 "dog" 1
 "dog" 2 "dog" 2 "dog" 2
+
+query II
+select * from 'tests/resources/data/animals1.parquet' as animals1 JOIN 'tests/resources/data/animals2.parquet' as animals2 ON animals1.animal = animals2.animal
+----
+"dog" "red" "M" 1 "dog" 1
+"dog" "red" "M" 1 "dog" 2
+"dog" "blue" "M" 2 "dog" 1
+"dog" "blue" "M" 2 "dog" 2
+
+query II
+select animals1.animal, colour, sex from 'tests/resources/data/animals1.parquet' as animals1 JOIN 'tests/resources/data/animals2.parquet' as animals2 ON animals1.animal = animals2.animal
+----
+"dog" "red" "M"
+"dog" "red" "M"
+"dog" "blue" "M"
+"dog" "blue" "M"

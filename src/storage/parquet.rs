@@ -4,7 +4,10 @@ use parquet::{
 };
 use std::{fs::File, path::Path};
 
-use crate::types::{error::Error, Chunk, Column, TupleValue};
+use crate::{
+    planner::OutputSchema,
+    types::{error::Error, Chunk, Column, TupleValue},
+};
 
 use super::StorageReader;
 
@@ -49,27 +52,25 @@ impl ParquetReader {
         }
     }
 
-    pub fn read_metadata(table: &str) -> Result<Vec<Column>, Error> {
+    pub fn read_metadata(table: &str) -> Result<OutputSchema, Error> {
         let path = Path::new(table);
 
-        let mut headers = Vec::new();
+        let mut output_schema = OutputSchema::new();
 
         if let Ok(file) = File::open(path) {
             let reader = SerializedFileReader::new(file).unwrap();
 
-            reader
+            for column in reader
                 .metadata()
                 .file_metadata()
                 .schema_descr()
                 .columns()
                 .iter()
-                .for_each(|x| {
-                    headers.push(Column {
-                        name: x.name().to_string(),
-                    });
-                });
+            {
+                output_schema.add_column(Column::new(None, column.name().to_string()))?;
+            }
 
-            Ok(headers)
+            Ok(output_schema)
         } else {
             Err(Error::Storage(
                 "Could not open file to read table data".to_string(),

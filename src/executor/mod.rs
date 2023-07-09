@@ -6,8 +6,8 @@ mod projection;
 mod scan;
 
 use crate::{
-    planner::{Node, Plan, PlanNode},
-    types::{error::Error, Chunk, Column, ResultSet},
+    planner::{Node, OutputSchema, Plan, PlanNode},
+    types::{error::Error, Chunk, ResultSet},
 };
 
 use self::{
@@ -17,7 +17,7 @@ use self::{
 const VECTOR_SIZE_THRESHOLD: usize = 1024;
 
 pub trait Executor {
-    fn get_output_schema(&self) -> Vec<Column>;
+    fn get_output_schema(&self) -> OutputSchema;
     fn next_chunk(&mut self) -> Result<Chunk, Error>;
 }
 
@@ -39,7 +39,7 @@ impl ExecutorBuilder {
             Node::Filter { filter, child } => {
                 let child = Self::build(*child)?;
 
-                match Filter::new(child, filter, plan_node.output_schema.clone()) {
+                match Filter::new(child, filter, plan_node.output_schema) {
                     Ok(e) => Ok(e),
                     Err(e) => Err(e),
                 }
@@ -47,7 +47,7 @@ impl ExecutorBuilder {
             Node::Projection { select, child } => {
                 let child = Self::build(*child)?;
 
-                match Projection::new(child, select, plan_node.output_schema.clone()) {
+                match Projection::new(child, select, plan_node.output_schema) {
                     Ok(e) => Ok(e),
                     Err(e) => Err(e),
                 }
