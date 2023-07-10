@@ -144,6 +144,7 @@ impl Planner {
                             from,
                             projection,
                             selection,
+                            group_by,
                             ..
                         } = &**select;
 
@@ -167,35 +168,36 @@ impl Planner {
                         // Build PROJECTION
                         let node = if !projection.is_empty() {
                             let select = projection.clone();
-                            let headers = if select.len() == 1 && select[0].to_string() == "*" {
-                                node.output_schema.clone()
-                            } else {
-                                let mut output_schema = OutputSchema::new();
-                                for item in &select {
-                                    match item {
-                                        SelectItem::UnnamedExpr(expr) => {
-                                            output_schema
-                                                .add_column(Column::new(None, expr.to_string()))?;
-                                        }
-                                        SelectItem::ExprWithAlias { expr, alias } => {
-                                            output_schema.add_column(Column::new(
-                                                Some(alias.value.clone()),
-                                                expr.to_string(),
-                                            ))?;
-                                        }
-                                        _ => {
-                                            return Err(Error::Planner(
-                                                "Only UnnamedExpr and ExprWithAlias supported"
-                                                    .to_string(),
-                                            ))
-                                        }
+
+                            // we need to find the aggregate functions and handle those separately
+
+                            let mut output_schema = OutputSchema::new();
+                            for item in &select {
+                                match item {
+                                    SelectItem::UnnamedExpr(expr) => {
+                                        output_schema
+                                            .add_column(Column::new(None, expr.to_string()))?;
+                                    }
+                                    SelectItem::ExprWithAlias { expr, alias } => {
+                                        output_schema.add_column(Column::new(
+                                            Some(alias.value.clone()),
+                                            expr.to_string(),
+                                        ))?;
+                                    }
+                                    SelectItem::Wildcard(_) => {
+                                        output_schema.append(&node.output_schema.clone())?;
+                                    }
+                                    _ => {
+                                        return Err(Error::Planner(
+                                            "Only UnnamedExpr and ExprWithAlias supported"
+                                                .to_string(),
+                                        ))
                                     }
                                 }
-                                output_schema
-                            };
+                            }
 
                             PlanNode {
-                                output_schema: headers,
+                                output_schema,
                                 node: Node::Projection {
                                     select,
                                     child: Box::new(node),
@@ -204,6 +206,14 @@ impl Planner {
                         } else {
                             node
                         };
+
+                        // Build HAVING
+
+                        // Build ORDER BY
+
+                        // Build OFFSET
+
+                        // Build LIMIT
 
                         Ok(Plan { root: node })
                     }
