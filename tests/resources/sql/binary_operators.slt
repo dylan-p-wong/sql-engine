@@ -1,0 +1,44 @@
+query B
+select true and true, true and false, false and true, false and false
+----
+true false false false
+
+query B
+select true or true, true or false, false or true, false or false
+----
+true true true false
+
+query B
+select true xor true, true xor false, false xor true, false xor false
+----
+false true true false
+
+query I
+select 1+2, 50000000001+50000000001
+----
+3 100000000002
+
+query I
+select 1-2, 2-1
+----
+-1 1
+
+query I
+select 2*3
+----
+6
+
+query I
+select 6/3
+----
+2
+
+query I
+select 6>3, 6<3, 6>=3, 6<=3, 6=3, 6!=3
+----
+true false true false false true
+
+query I
+select 'a'<'b', 'a'<='b', 'a'>'b', 'a'>='b', 'a'='b', 'a'!='b'
+----
+true true false false false true
