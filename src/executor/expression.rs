@@ -24,6 +24,7 @@ impl ExprEvaluator {
 
     pub fn evaluate(expr: &Expr, row: &Row, columns: &OutputSchema) -> Result<Field, Error> {
         match expr {
+            Expr::Nested(expr) => Self::evaluate(expr, row, columns),
             Expr::UnaryOp { op, expr } => Self::evaluate_unary_op(op, expr, row, columns),
             Expr::BinaryOp { left, op, right } => {
                 let left = Self::evaluate(left, row, columns)?;
@@ -56,6 +57,7 @@ impl ExprEvaluator {
         row: &Row,
         output_schema: &OutputSchema,
     ) -> Result<Field, Error> {
+        assert!(output_schema.columns.len() == row.len());
         let index = output_schema.resolve(&ident.value)?;
         Ok(row[index].value.clone())
     }

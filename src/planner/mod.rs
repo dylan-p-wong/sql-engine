@@ -69,7 +69,7 @@ impl OutputSchema {
             }
 
             if result_index.is_some() {
-                return Err(Error::Planner("Ambiguous field name".to_string()));
+                return Err(Error::Planner(format!("Ambiguous field name: {}", name)));
             }
 
             result_index = Some(i);
@@ -135,10 +135,11 @@ impl Planner {
             plans.push(self.build_statement(statement)?);
         }
 
-        // TODO
+        // TODO(Dylan): We are only using the last plan for now
         Ok(plans.pop().unwrap())
     }
 
+    // changes the expression to swap an aggreate function with an internal identifier that can be used to reference the aggregate later
     fn extract_aggregates(&self, item: &mut Expr, next_aggregate_number : &mut i32) -> Result<Vec<Function>, Error> {
         match item {
             Expr::Function ( function ) => {
@@ -212,6 +213,7 @@ impl Planner {
                                         non_aggregate_projections.push(item.clone());
                                     } else {
                                         all_aggregates.append(&mut aggregates);
+                                        non_aggregate_projections.append(&mut self.extract_identifiers_as_select_items(expr));
                                     }
                                 }
                                 SelectItem::ExprWithAlias { ref mut expr, alias } => {
@@ -220,6 +222,7 @@ impl Planner {
                                         non_aggregate_projections.push(item.clone());
                                     } else {
                                         all_aggregates.append(&mut aggregates);
+                                        non_aggregate_projections.append(&mut self.extract_identifiers_as_select_items(expr));
                                     }
                                 }
                                 _ => {}
@@ -261,10 +264,8 @@ impl Planner {
                                 },
                             }
                         } else {
-                            self.build_aggregate_statement(node, &select.clone(), &non_aggregate_projections, &all_aggregates, group_by, having)?
+                            self.build_aggregate_statement(node, &select.clone(), &mut non_aggregate_projections, &all_aggregates, group_by, having)?
                         };
-
-                        // Build HAVING
 
                         // Build ORDER BY
 
@@ -283,19 +284,49 @@ impl Planner {
         }
     }
 
+    fn extract_identifiers_as_select_items(&self, expr : &Expr) -> Vec<SelectItem> {
+        let mut literals = Vec::new();
+
+        match expr {
+            Expr::Identifier(ident) => {
+                // TODO(Dylan): This is a hack since we do not want to include the aggregates here
+                if ident.value.starts_with("#agg") {
+                    return literals;
+                }
+                literals.push(SelectItem::UnnamedExpr(Expr::Identifier(ident.clone())));
+            }
+            Expr::CompoundIdentifier(ident) => {
+                literals.push(SelectItem::UnnamedExpr(Expr::CompoundIdentifier(ident.clone())));
+            }
+            Expr::BinaryOp { left, op, right } => {
+                literals.append(&mut self.extract_identifiers_as_select_items(left));
+                literals.append(&mut self.extract_identifiers_as_select_items(right));
+            }
+            Expr::UnaryOp { op, expr } => {
+                literals.append(&mut self.extract_identifiers_as_select_items(expr));
+            }
+            _ => {}
+        }
+
+        literals
+    }
+
     // resolves the aggregates, group by and having
-    fn build_aggregate_statement(&self, child : PlanNode, end_projection : &Vec<SelectItem>, non_aggregate_projections : &Vec<SelectItem>, aggregates : &Vec<Function>, group_by : &Vec<Expr>, having : &Option<Expr>) -> Result<PlanNode, Error> {
+    fn build_aggregate_statement(&self, child : PlanNode, end_projection : &Vec<SelectItem>, non_aggregate_projections : &mut Vec<SelectItem>, aggregates : &Vec<Function>, group_by : &Vec<Expr>, having : &Option<Expr>) -> Result<PlanNode, Error> {
         assert!(!aggregates.is_empty());
 
         // aggregates functions (#agg0, #agg1, etc.) followed by group by followed by non-aggregates we need
         let mut first_projection_with_aggregates_output_schema = OutputSchema::new();
-
+        
         // add aggregates to the output schema
         for (i, item) in aggregates.iter().enumerate() {
-            first_projection_with_aggregates_output_schema.add_column(Column { label: Some(item.to_string()), table: None, column_name: format!("#agg{}", i) })?
+            first_projection_with_aggregates_output_schema.add_column(Column { label: Some(item.to_string()), table: None, column_name: format!("#agg{}", i) })?;
         }
+
+        // add non aggregates to the output schema
         first_projection_with_aggregates_output_schema.append(&mut self.get_output_schema_from_projection(non_aggregate_projections, &child)?)?;
 
+        // plan the aggregate node
         let mut node = PlanNode {
             output_schema: first_projection_with_aggregates_output_schema,
             node: Node::Aggregate {
@@ -308,7 +339,7 @@ impl Planner {
 
         // TODO(Dylan): plan a filter based on having clause
 
-        // plan a projection to get to the original list
+        // plan a projection to get to the original projection
         node = PlanNode {
             output_schema: self.get_output_schema_from_projection(end_projection, &node)?, // change this
             node: Node::Projection {
