@@ -1,4 +1,18 @@
-query II
+query II rowsort
 select max(animals.age), min(animals.age) from 'tests/resources/data/animals1.parquet' as animals group by animals.animal
 ----
-1 2
+2 1
+4 3
+6 5
+
+query II rowsort
+select max(animals.age), min(animals.age) from 'tests/resources/data/animals1.parquet' as animals
+----
+6 1
+
+query II rowsort
+select max(animals.age) * 2, min(animals.age) - 1 from 'tests/resources/data/animals1.parquet' as animals group by animals.animal
+----
+12 4
+4 0
+8 2

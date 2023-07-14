@@ -47,7 +47,7 @@ impl Aggregation {
             return Ok(());
         }
 
-        let mut rows = HashMap::new();
+        let mut rows : HashMap<Vec<String>, (Vec<Box<dyn Accumulator>>, Vec<Field>)> = HashMap::new();
         
         loop {
             let chunk = self.child.next_chunk()?;
@@ -64,12 +64,12 @@ impl Aggregation {
                 // TODO(Dylan): See is there is some other better method to generate key
                 let key = group_by_values.iter().map(|field| field.to_string()).collect::<Vec<String>>();
                 if rows.contains_key(&key) {
-                    // let (accumulators , _) : (&mut Vec<Box<dyn Accumulator>>, Vec<Field>) = *rows.get_mut(&key).unwrap();
-
-                    // for (i, function) in self.aggregates.iter().enumerate() {
-                    //     let field = ExprEvaluator::evaluate(&self.get_expr(function)?, &row, &self.child.get_output_schema())?;
-                    //     accumulators[i].accumulate(&field)?;
-                    // }
+                    let value = rows.get_mut(&key).unwrap();
+                    
+                    for (i, function) in self.aggregates.iter().enumerate() {
+                        let field = ExprEvaluator::evaluate(&self.get_expr(function)?, &row, &self.child.get_output_schema())?;
+                        value.0[i].accumulate(&field)?;
+                    }
                 } else {
                     let mut accumulators: Vec<Box<dyn Accumulator>> = self.aggregates.iter().map(|a| self.new_accumulator(a)).collect();
                     for (i, function) in self.aggregates.iter().enumerate() {
@@ -203,7 +203,6 @@ impl MinAccumulator {
 
 impl Accumulator for MinAccumulator {
     fn accumulate(&mut self, field: &Field) -> Result<(), Error> {
-        println!("Accumulate: {:?}", field);
         match self.min {
             Some(ref min) => {
                 let x = ExprEvaluator::evaluate_binary_op(field, &sqlparser::ast::BinaryOperator::LtEq, min)?;
