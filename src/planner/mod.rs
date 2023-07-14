@@ -111,6 +111,7 @@ pub enum Node {
     Aggregate {
         child: Box<PlanNode>,
         aggregates: Vec<Function>,
+        non_aggregates: Vec<SelectItem>,
         group_by: Vec<Expr>,
     },
     Empty {},
@@ -253,14 +254,14 @@ impl Planner {
                             }
 
                             PlanNode {
-                                output_schema,
+                                output_schema: self.get_output_schema_from_projection(&select, &node)?,
                                 node: Node::Projection {
                                     select,
                                     child: Box::new(node),
                                 },
                             }
                         } else {
-                            self.build_aggregate_statement(node, &select.clone(), &all_aggregates, group_by, having)?
+                            self.build_aggregate_statement(node, &select.clone(), &non_aggregate_projections, &all_aggregates, group_by, having)?
                         };
 
                         // Build HAVING
@@ -283,7 +284,7 @@ impl Planner {
     }
 
     // resolves the aggregates, group by and having
-    fn build_aggregate_statement(&self, child : PlanNode, end_projection : &Vec<SelectItem>, aggregates : &Vec<Function>, group_by : &Vec<Expr>, having : &Option<Expr>) -> Result<PlanNode, Error> {
+    fn build_aggregate_statement(&self, child : PlanNode, end_projection : &Vec<SelectItem>, non_aggregate_projections : &Vec<SelectItem>, aggregates : &Vec<Function>, group_by : &Vec<Expr>, having : &Option<Expr>) -> Result<PlanNode, Error> {
         assert!(!aggregates.is_empty());
 
         // aggregates functions (#agg0, #agg1, etc.) followed by group by followed by non-aggregates we need
@@ -293,6 +294,7 @@ impl Planner {
         for (i, item) in aggregates.iter().enumerate() {
             first_projection_with_aggregates_output_schema.add_column(Column { label: Some(item.to_string()), table: None, column_name: format!("#agg{}", i) })?
         }
+        first_projection_with_aggregates_output_schema.append(&mut self.get_output_schema_from_projection(non_aggregate_projections, &child)?)?;
 
         let mut node = PlanNode {
             output_schema: first_projection_with_aggregates_output_schema,
@@ -300,6 +302,7 @@ impl Planner {
                 child: Box::new(child),
                 aggregates: aggregates.clone(),
                 group_by: group_by.clone(),
+                non_aggregates: non_aggregate_projections.clone(),
             },
         };
 

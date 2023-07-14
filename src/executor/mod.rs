@@ -75,10 +75,10 @@ impl ExecutorBuilder {
                     Err(e) => Err(e),
                 }
             },
-            Node::Aggregate { child, aggregates, group_by } => {
+            Node::Aggregate { child, aggregates, group_by, non_aggregates} => {
                 let child = Self::build(*child)?;
 
-                match Aggregation::new(child, aggregates, group_by, plan_node.output_schema) {
+                match Aggregation::new(child, aggregates, non_aggregates, group_by, plan_node.output_schema) {
                     Ok(e) => Ok(e),
                     Err(e) => Err(e),
                 }

@@ -16,3 +16,13 @@ select max(animals.age) * 2, min(animals.age) - 1 from 'tests/resources/data/ani
 12 4
 4 0
 8 2
+
+query IIII rowsort
+select max(animals.age), min(animals.age), animals.animal, animals.colour from 'tests/resources/data/animals1.parquet' as animals group by animals.animal, animals.colour
+----
+1 1 "dog" "red"
+2 2 "dog" "blue"
+3 3 "cat" "red"
+4 4 "cat" "blue"
+5 5 "rhino" "grey"
+6 6 "rhino" "black"

@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::f32::consts::E;
 
 use parquet::record::Field;
-use sqlparser::ast::{Function, Expr};
+use sqlparser::ast::{Function, Expr, SelectItem};
 
 use crate::executor::Executor;
 use crate::planner::OutputSchema;
@@ -20,6 +20,7 @@ pub struct Aggregation {
     output_schema: OutputSchema,
     child: Box<dyn Executor>,
     aggregates: Vec<Function>,
+    non_aggregates: Vec<SelectItem>,
     group_by: Vec<Expr>,
 
     rows: Option<HashMap<Vec<String>, (Vec<Box<dyn Accumulator>>, Vec<Field>)>>, // [group_by_values] -> ([accumulators], [non_aggregated_values])
@@ -29,6 +30,7 @@ impl Aggregation {
     pub fn new(
         child: Box<dyn Executor>,
         aggregates: Vec<Function>,
+        non_aggregates: Vec<SelectItem>,
         group_by: Vec<Expr>,
         output_schema: OutputSchema,
     ) -> Result<Box<Aggregation>, Error> {
@@ -37,6 +39,7 @@ impl Aggregation {
             output_schema,
             group_by,
             aggregates,
+            non_aggregates,
             rows: None,
         }))
     }
@@ -77,8 +80,23 @@ impl Aggregation {
                         accumulators[i].accumulate(&field)?;
                     }
                     
-                    // TODO(Dylan): Implement other non aggregate values
-                    let non_aggregated_values: Vec<Field> = Vec::new();
+                    let mut non_aggregated_values: Vec<Field> = Vec::new();
+                    for expr in self.non_aggregates.iter() {
+                        match expr {
+                            SelectItem::UnnamedExpr(e) => {
+                                let field = ExprEvaluator::evaluate(e, &row, &self.child.get_output_schema())?;
+                                non_aggregated_values.push(field);
+                            },
+                            SelectItem::Wildcard(_) => {
+                                for col in &row {
+                                    non_aggregated_values.push(col.value.clone());
+                                }
+                            },
+                            _ => {
+                                panic!("Unsupported select item: {}", expr.to_string()); // TODO: Error handling
+                            }
+                        }
+                    }
 
                     rows.insert(key, (accumulators, non_aggregated_values));
                 }
