@@ -1,5 +1,5 @@
 use sqlparser::ast::{
-    Expr, Query, Select, SelectItem, SetExpr, Statement, TableFactor, TableWithJoins,
+    Expr, Query, Select, SelectItem, SetExpr, Statement, TableFactor, TableWithJoins, Function, Ident,
 };
 
 use crate::{
@@ -108,6 +108,11 @@ pub enum Node {
         select: Vec<SelectItem>,
         child: Box<PlanNode>,
     },
+    Aggregate {
+        child: Box<PlanNode>,
+        aggregates: Vec<Function>,
+        group_by: Vec<Expr>,
+    },
     Empty {},
 }
 
@@ -133,6 +138,29 @@ impl Planner {
         Ok(plans.pop().unwrap())
     }
 
+    fn extract_aggregates(&self, item: &mut Expr) -> Result<Vec<Function>, Error> {
+        match item {
+            Expr::Function ( function ) => {
+                // TODO(Dylan): verify that there are no nested aggregates
+                let function = function.clone();
+                // we replace the function with a new identifier
+                *item = Expr::Identifier(Ident::new(format!("#agg{}", 0))); // todo fix the number
+                Ok(vec![function])
+            }
+            Expr::UnaryOp { op, expr } => {
+                self.extract_aggregates(expr)
+            }
+            Expr::BinaryOp { left, op, right } => {
+                let mut l =  self.extract_aggregates(left)?;
+                let mut r =  self.extract_aggregates(right)?;
+                
+                l.append(&mut r);
+                Ok(l)
+            }
+            _ => Ok(vec![]),
+        }
+    }
+
     fn build_statement(&self, statement: &Statement) -> Result<Plan, Error> {
         match statement {
             Statement::Query(query) => {
@@ -145,6 +173,7 @@ impl Planner {
                             projection,
                             selection,
                             group_by,
+                            having,
                             ..
                         } = &**select;
 
@@ -165,12 +194,37 @@ impl Planner {
                             node
                         };
 
+                        // we need to extract the aggregate functions and handle those separately
+                        // we replace the aggregates with an internal identifier #agg0, #agg1, etc.
+                        let mut all_aggregates = Vec::new();
+                        let mut non_aggregate_projections = Vec::new();
+
+                        let mut select = projection.clone();
+
+                        for item in select.iter_mut() {
+                            match item {
+                                SelectItem::UnnamedExpr(ref mut expr) => {
+                                    let mut aggregates = self.extract_aggregates(expr)?;
+                                    if aggregates.is_empty() {
+                                        non_aggregate_projections.push(item.clone());
+                                    } else {
+                                        all_aggregates.append(&mut aggregates);
+                                    }
+                                }
+                                SelectItem::ExprWithAlias { ref mut expr, alias } => {
+                                    let mut aggregates = self.extract_aggregates(expr)?;
+                                    if aggregates.is_empty() {
+                                        non_aggregate_projections.push(item.clone());
+                                    } else {
+                                        all_aggregates.append(&mut aggregates);
+                                    }
+                                }
+                                _ => {}
+                            }
+                        }
+
                         // Build PROJECTION
-                        let node = if !projection.is_empty() {
-                            let select = projection.clone();
-
-                            // we need to find the aggregate functions and handle those separately
-
+                        let node = if all_aggregates.is_empty() {
                             let mut output_schema = OutputSchema::new();
                             for item in &select {
                                 match item {
@@ -204,7 +258,7 @@ impl Planner {
                                 },
                             }
                         } else {
-                            node
+                            self.build_aggregate_statement(node, &select.clone(), &all_aggregates, group_by, having)?
                         };
 
                         // Build HAVING
@@ -224,6 +278,50 @@ impl Planner {
                 "Only Query operations are supported".to_string(),
             )),
         }
+    }
+
+    // resolves the aggregates, group by and having
+    fn build_aggregate_statement(&self, child : PlanNode, end_projection : &Vec<SelectItem>, aggregates : &Vec<Function>, group_by : &Vec<Expr>, having : &Option<Expr>) -> Result<PlanNode, Error> {
+        assert!(!aggregates.is_empty());
+
+        println!("end: {:?}", end_projection);
+
+        // aggregates functions (#agg0, #agg1, etc.) followed by group by followed by non-aggregates we need
+        let mut first_projection_with_aggregates_output_schema = OutputSchema::new();
+
+        // add aggregates to the output schema
+        for (i, item) in aggregates.iter().enumerate() {
+            first_projection_with_aggregates_output_schema.add_column(Column { label: Some(item.to_string()), table: None, column_name: format!("#agg{}", i) })?
+        }
+
+        // add the group by to the output schema
+        for item in group_by {
+            first_projection_with_aggregates_output_schema.add_column(Column { label: None, table: None, column_name: item.to_string() })?
+        }
+
+        println!("first: {:?}", first_projection_with_aggregates_output_schema);
+
+        let mut node = PlanNode {
+            output_schema: first_projection_with_aggregates_output_schema,
+            node: Node::Aggregate {
+                child: Box::new(child),
+                aggregates: aggregates.clone(),
+                group_by: group_by.clone(),
+            },
+        };
+
+        // TODO(dylan): plan a filter based on having clause
+
+        // plan a projection to get to the original list
+        // node = PlanNode {
+        //     output_schema: node.output_schema.clone(), // change this
+        //     node: Node::Projection {
+        //         select: end_projection.clone(),
+        //         child: Box::new(node),
+        //     },
+        // };
+
+        return Ok(node);
     }
 
     fn build_from_clause(&self, from: &Vec<TableWithJoins>) -> Result<PlanNode, Error> {

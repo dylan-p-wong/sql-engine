@@ -1,0 +1,4 @@
+query II
+select max(animals.age), min(animals.age) from 'tests/resources/data/animals1.parquet' as animals group by animals.animal
+----
+1 2
