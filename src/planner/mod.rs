@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use sqlparser::ast::{
     Expr, Function, Ident, Query, Select, SelectItem, SetExpr, Statement, TableFactor,
     TableWithJoins,
@@ -205,7 +207,7 @@ impl Planner {
                             node
                         };
 
-                        let mut select = projection.clone();
+                        let mut select_items = projection.clone();
 
                         // we need to extract the aggregate functions and handle those separately and extract the identifiers in the select items with aggregate functions
                         // this allows to to get all the values we need to perform the aggregate functions and projections
@@ -214,8 +216,9 @@ impl Planner {
                         let mut all_aggregates = Vec::new();
                         let mut total_aggregates = 0;
                         let mut non_aggregate_projections = Vec::new();
+                        let mut seen = HashSet::new();
 
-                        for item in select.iter_mut() {
+                        for item in select_items.iter_mut() {
                             match item {
                                 SelectItem::UnnamedExpr(ref mut expr) => {
                                     let mut aggregates =
@@ -225,7 +228,9 @@ impl Planner {
                                     } else {
                                         all_aggregates.append(&mut aggregates);
                                         non_aggregate_projections.append(
-                                            &mut Self::extract_identifiers_as_select_items(expr),
+                                            &mut Self::extract_identifiers_as_select_items(
+                                                expr, &mut seen,
+                                            ),
                                         );
                                     }
                                 }
@@ -237,7 +242,9 @@ impl Planner {
                                     } else {
                                         all_aggregates.append(&mut aggregates);
                                         non_aggregate_projections.append(
-                                            &mut Self::extract_identifiers_as_select_items(expr),
+                                            &mut Self::extract_identifiers_as_select_items(
+                                                expr, &mut seen,
+                                            ),
                                         );
                                     }
                                 }
@@ -247,43 +254,11 @@ impl Planner {
 
                         // Build PROJECTION
                         let node = if all_aggregates.is_empty() {
-                            let mut output_schema = OutputSchema::new();
-                            for item in &select {
-                                match item {
-                                    SelectItem::UnnamedExpr(expr) => {
-                                        output_schema
-                                            .add_column(Column::new(None, expr.to_string()))?;
-                                    }
-                                    SelectItem::ExprWithAlias { expr, alias } => {
-                                        output_schema.add_column(Column::new(
-                                            Some(alias.value.clone()),
-                                            expr.to_string(),
-                                        ))?;
-                                    }
-                                    SelectItem::Wildcard(_) => {
-                                        output_schema.append(&node.output_schema.clone())?;
-                                    }
-                                    _ => {
-                                        return Err(Error::Planner(
-                                            "Only UnnamedExpr and ExprWithAlias supported"
-                                                .to_string(),
-                                        ))
-                                    }
-                                }
-                            }
-
-                            PlanNode {
-                                output_schema: self
-                                    .get_output_schema_from_projection(&select, &node)?,
-                                node: Node::Projection {
-                                    select,
-                                    child: Box::new(node),
-                                },
-                            }
+                            self.build_non_aggregate_statement(node, &select_items)?
                         } else {
                             self.build_aggregate_statement(
                                 node,
-                                &select.clone(),
+                                &select_items.clone(),
                                 &mut non_aggregate_projections,
                                 &all_aggregates,
                                 group_by,
@@ -308,7 +283,10 @@ impl Planner {
         }
     }
 
-    fn extract_identifiers_as_select_items(expr: &Expr) -> Vec<SelectItem> {
+    fn extract_identifiers_as_select_items(
+        expr: &Expr,
+        seen: &mut HashSet<String>,
+    ) -> Vec<SelectItem> {
         let mut literals = Vec::new();
 
         match expr {
@@ -317,24 +295,67 @@ impl Planner {
                 if ident.value.starts_with("#agg") {
                     return literals;
                 }
-                literals.push(SelectItem::UnnamedExpr(Expr::Identifier(ident.clone())));
+
+                // This removes duplicates identifiers
+                if !seen.contains(&ident.value) {
+                    literals.push(SelectItem::UnnamedExpr(Expr::Identifier(ident.clone())));
+                    seen.insert(ident.value.clone());
+                }
             }
-            Expr::CompoundIdentifier(ident) => {
-                literals.push(SelectItem::UnnamedExpr(Expr::CompoundIdentifier(
-                    ident.clone(),
-                )));
+            Expr::CompoundIdentifier(..) => {
+                if !seen.contains(expr.to_string().as_str()) {
+                    literals.push(SelectItem::UnnamedExpr(expr.clone()));
+                    seen.insert(expr.to_string());
+                }
             }
             Expr::BinaryOp { left, op: _, right } => {
-                literals.append(&mut Self::extract_identifiers_as_select_items(left));
-                literals.append(&mut Self::extract_identifiers_as_select_items(right));
+                literals.append(&mut Self::extract_identifiers_as_select_items(left, seen));
+                literals.append(&mut Self::extract_identifiers_as_select_items(right, seen));
             }
             Expr::UnaryOp { op: _, expr } => {
-                literals.append(&mut Self::extract_identifiers_as_select_items(expr));
+                literals.append(&mut Self::extract_identifiers_as_select_items(expr, seen));
             }
             _ => {}
         }
 
         literals
+    }
+
+    // builds a projection for select items without aggregates, group by or having
+    fn build_non_aggregate_statement(
+        &self,
+        child: PlanNode,
+        end_projection: &Vec<SelectItem>,
+    ) -> Result<PlanNode, Error> {
+        let mut output_schema = OutputSchema::new();
+        for item in end_projection {
+            match item {
+                SelectItem::UnnamedExpr(expr) => {
+                    output_schema.add_column(Column::new(None, expr.to_string()))?;
+                }
+                SelectItem::ExprWithAlias { expr, alias } => {
+                    output_schema
+                        .add_column(Column::new(Some(alias.value.clone()), expr.to_string()))?;
+                }
+                SelectItem::Wildcard(_) => {
+                    output_schema.append(&child.output_schema.clone())?;
+                }
+                _ => {
+                    return Err(Error::Planner(
+                        "Only UnnamedExpr and ExprWithAlias supported".to_string(),
+                    ))
+                }
+            }
+        }
+
+        let node = PlanNode {
+            output_schema: self.get_output_schema_from_projection(end_projection, &child)?,
+            node: Node::Projection {
+                select: end_projection.clone(),
+                child: Box::new(child),
+            },
+        };
+        Ok(node)
     }
 
     // resolves the aggregates, group by and having

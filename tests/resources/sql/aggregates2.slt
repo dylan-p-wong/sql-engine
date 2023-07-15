@@ -44,3 +44,13 @@ query IIIII rowsort
 select count(*), sum(score1), min(score1), max(score1), score1 from 'tests/resources/data/movies1.parquet' where false
 ----
 0 null null null null
+
+query IIIII rowsort
+select min(score1) * score2, max(score1) * score2 from 'tests/resources/data/movies1.parquet'
+----
+16 80
+
+query IIIII rowsort
+select min(score1) * movies.score2, max(score1) * movies.score2 from 'tests/resources/data/movies1.parquet' as movies
+----
+16 80
