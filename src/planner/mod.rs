@@ -142,7 +142,6 @@ impl Planner {
 
     // changes the expression to swap an aggreate function with an internal identifier that can be used to reference the aggregate later
     fn extract_aggregates(
-        &self,
         item: &mut Expr,
         next_aggregate_number: &mut i32,
     ) -> Result<Vec<Function>, Error> {
@@ -155,10 +154,16 @@ impl Planner {
                 *next_aggregate_number += 1;
                 Ok(vec![function])
             }
-            Expr::UnaryOp { op, expr } => self.extract_aggregates(expr, next_aggregate_number),
-            Expr::BinaryOp { left, op, right } => {
-                let mut l = self.extract_aggregates(left, next_aggregate_number)?;
-                let mut r = self.extract_aggregates(right, next_aggregate_number)?;
+            Expr::UnaryOp { op: _op, expr } => {
+                Self::extract_aggregates(expr, next_aggregate_number)
+            }
+            Expr::BinaryOp {
+                left,
+                op: _op,
+                right,
+            } => {
+                let mut l = Self::extract_aggregates(left, next_aggregate_number)?;
+                let mut r = Self::extract_aggregates(right, next_aggregate_number)?;
 
                 l.append(&mut r);
                 Ok(l)
@@ -200,40 +205,39 @@ impl Planner {
                             node
                         };
 
-                        // we need to extract the aggregate functions and handle those separately
+                        let mut select = projection.clone();
+
+                        // we need to extract the aggregate functions and handle those separately and extract the identifiers in the select items with aggregate functions
+                        // this allows to to get all the values we need to perform the aggregate functions and projections
                         // we replace the aggregates with an internal identifier #agg0, #agg1, etc.
+                        // alias is handled later in the final projection
                         let mut all_aggregates = Vec::new();
                         let mut total_aggregates = 0;
                         let mut non_aggregate_projections = Vec::new();
-
-                        let mut select = projection.clone();
 
                         for item in select.iter_mut() {
                             match item {
                                 SelectItem::UnnamedExpr(ref mut expr) => {
                                     let mut aggregates =
-                                        self.extract_aggregates(expr, &mut total_aggregates)?;
+                                        Self::extract_aggregates(expr, &mut total_aggregates)?;
                                     if aggregates.is_empty() {
                                         non_aggregate_projections.push(item.clone());
                                     } else {
                                         all_aggregates.append(&mut aggregates);
                                         non_aggregate_projections.append(
-                                            &mut self.extract_identifiers_as_select_items(expr),
+                                            &mut Self::extract_identifiers_as_select_items(expr),
                                         );
                                     }
                                 }
-                                SelectItem::ExprWithAlias {
-                                    ref mut expr,
-                                    alias,
-                                } => {
+                                SelectItem::ExprWithAlias { ref mut expr, .. } => {
                                     let mut aggregates =
-                                        self.extract_aggregates(expr, &mut total_aggregates)?;
+                                        Self::extract_aggregates(expr, &mut total_aggregates)?;
                                     if aggregates.is_empty() {
                                         non_aggregate_projections.push(item.clone());
                                     } else {
                                         all_aggregates.append(&mut aggregates);
                                         non_aggregate_projections.append(
-                                            &mut self.extract_identifiers_as_select_items(expr),
+                                            &mut Self::extract_identifiers_as_select_items(expr),
                                         );
                                     }
                                 }
@@ -304,7 +308,7 @@ impl Planner {
         }
     }
 
-    fn extract_identifiers_as_select_items(&self, expr: &Expr) -> Vec<SelectItem> {
+    fn extract_identifiers_as_select_items(expr: &Expr) -> Vec<SelectItem> {
         let mut literals = Vec::new();
 
         match expr {
@@ -320,12 +324,12 @@ impl Planner {
                     ident.clone(),
                 )));
             }
-            Expr::BinaryOp { left, op, right } => {
-                literals.append(&mut self.extract_identifiers_as_select_items(left));
-                literals.append(&mut self.extract_identifiers_as_select_items(right));
+            Expr::BinaryOp { left, op: _, right } => {
+                literals.append(&mut Self::extract_identifiers_as_select_items(left));
+                literals.append(&mut Self::extract_identifiers_as_select_items(right));
             }
-            Expr::UnaryOp { op, expr } => {
-                literals.append(&mut self.extract_identifiers_as_select_items(expr));
+            Expr::UnaryOp { op: _, expr } => {
+                literals.append(&mut Self::extract_identifiers_as_select_items(expr));
             }
             _ => {}
         }
@@ -340,8 +344,8 @@ impl Planner {
         end_projection: &Vec<SelectItem>,
         non_aggregate_projections: &mut Vec<SelectItem>,
         aggregates: &Vec<Function>,
-        group_by: &Vec<Expr>,
-        having: &Option<Expr>,
+        group_by: &[Expr],
+        _having: &Option<Expr>,
     ) -> Result<PlanNode, Error> {
         assert!(!aggregates.is_empty());
 
@@ -358,9 +362,8 @@ impl Planner {
         }
 
         // add non aggregates to the output schema
-        first_projection_with_aggregates_output_schema.append(
-            &mut self.get_output_schema_from_projection(non_aggregate_projections, &child)?,
-        )?;
+        first_projection_with_aggregates_output_schema
+            .append(&self.get_output_schema_from_projection(non_aggregate_projections, &child)?)?;
 
         // plan the aggregate node
         let mut node = PlanNode {
@@ -368,7 +371,7 @@ impl Planner {
             node: Node::Aggregate {
                 child: Box::new(child),
                 aggregates: aggregates.clone(),
-                group_by: group_by.clone(),
+                group_by: group_by.to_vec(),
                 non_aggregates: non_aggregate_projections.clone(),
             },
         };
@@ -384,7 +387,7 @@ impl Planner {
             },
         };
 
-        return Ok(node);
+        Ok(node)
     }
 
     fn get_output_schema_from_projection(

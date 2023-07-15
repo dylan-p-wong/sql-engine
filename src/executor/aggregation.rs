@@ -10,6 +10,10 @@ use crate::types::{Chunk, Row, TupleValue};
 
 use super::expression::ExprEvaluator;
 
+type GroupByKey = Vec<String>;
+type AggregationColumns = Vec<Box<dyn Accumulator>>;
+type NonAggregationColumns = Vec<Field>;
+
 pub trait Accumulator {
     fn accumulate(&mut self, field: &Field) -> Result<(), Error>;
     fn aggregate(&self) -> Field;
@@ -22,7 +26,7 @@ pub struct Aggregation {
     non_aggregates: Vec<SelectItem>,
     group_by: Vec<Expr>,
 
-    rows: Option<HashMap<Vec<String>, (Vec<Box<dyn Accumulator>>, Vec<Field>)>>, // [group_by_values] -> ([accumulators], [non_aggregated_values])
+    rows: Option<HashMap<GroupByKey, (AggregationColumns, NonAggregationColumns)>>,
 }
 
 impl Aggregation {
@@ -49,7 +53,7 @@ impl Aggregation {
             return Ok(());
         }
 
-        let mut rows: HashMap<Vec<String>, (Vec<Box<dyn Accumulator>>, Vec<Field>)> =
+        let mut rows: HashMap<GroupByKey, (AggregationColumns, NonAggregationColumns)> =
             HashMap::new();
 
         loop {
@@ -70,20 +74,10 @@ impl Aggregation {
                 let key = group_by_values
                     .iter()
                     .map(|field| field.to_string())
-                    .collect::<Vec<String>>();
-                if rows.contains_key(&key) {
-                    let value = rows.get_mut(&key).unwrap();
+                    .collect::<GroupByKey>();
 
-                    for (i, function) in self.aggregates.iter().enumerate() {
-                        let field = ExprEvaluator::evaluate(
-                            &self.get_expr(function)?,
-                            &row,
-                            &self.child.get_output_schema(),
-                        )?;
-                        value.0[i].accumulate(&field)?;
-                    }
-                } else {
-                    let mut accumulators: Vec<Box<dyn Accumulator>> = self
+                if let std::collections::hash_map::Entry::Vacant(e) = rows.entry(key.clone()) {
+                    let mut accumulators: AggregationColumns = self
                         .aggregates
                         .iter()
                         .map(|a| self.new_accumulator(a))
@@ -97,7 +91,7 @@ impl Aggregation {
                         accumulators[i].accumulate(&field)?;
                     }
 
-                    let mut non_aggregated_values: Vec<Field> = Vec::new();
+                    let mut non_aggregated_values: NonAggregationColumns = Vec::new();
                     for expr in self.non_aggregates.iter() {
                         match expr {
                             SelectItem::UnnamedExpr(e) => {
@@ -114,25 +108,38 @@ impl Aggregation {
                                 }
                             }
                             _ => {
-                                panic!("Unsupported select item: {}", expr.to_string());
-                                // TODO: Error handling
+                                return Err(Error::Execution(format!(
+                                    "Unsupported select item: {}",
+                                    expr
+                                )));
                             }
                         }
                     }
 
-                    rows.insert(key, (accumulators, non_aggregated_values));
+                    e.insert((accumulators, non_aggregated_values));
+                } else {
+                    let value = rows.get_mut(&key).unwrap();
+
+                    for (i, function) in self.aggregates.iter().enumerate() {
+                        let field = ExprEvaluator::evaluate(
+                            &self.get_expr(function)?,
+                            &row,
+                            &self.child.get_output_schema(),
+                        )?;
+                        value.0[i].accumulate(&field)?;
+                    }
                 }
             }
         }
-        
+
         //  if there are no rows we need to insert an empty row with empty accumulators
         if rows.keys().len() == 0 {
-            let accumulators: Vec<Box<dyn Accumulator>> = self
-                        .aggregates
-                        .iter()
-                        .map(|a| self.new_accumulator(a))
-                        .collect();
-            let mut non_aggregated_values: Vec<Field> = Vec::new();
+            let accumulators: AggregationColumns = self
+                .aggregates
+                .iter()
+                .map(|a| self.new_accumulator(a))
+                .collect();
+            let mut non_aggregated_values: NonAggregationColumns = Vec::new();
             for _ in 0..self.non_aggregates.len() {
                 non_aggregated_values.push(Field::Null);
             }
@@ -146,20 +153,12 @@ impl Aggregation {
     fn new_accumulator(&self, function: &Function) -> Box<dyn Accumulator> {
         // TODO(Dylan): Implement other functions
         match function.name.to_string().as_str() {
-            "max" => {
-                return Box::new(MaxAccumulator::new());
-            }
-            "min" => {
-                return Box::new(MinAccumulator::new());
-            }
-            "sum" => {
-                return Box::new(SumAccumulator::new());
-            }
-            "count" => {
-                return Box::new(CountAccumulator::new());
-            }
+            "max" => Box::new(MaxAccumulator::new()),
+            "min" => Box::new(MinAccumulator::new()),
+            "sum" => Box::new(SumAccumulator::new()),
+            "count" => Box::new(CountAccumulator::new()),
             _ => {
-                panic!("Unsupported function: {}", function.name.to_string()); // TODO(Dylan): Error handling
+                panic!("Unsupported function: {}", function.name); // TODO(Dylan): Error handling
             }
         }
     }
@@ -178,17 +177,17 @@ impl Aggregation {
                 sqlparser::ast::FunctionArgExpr::QualifiedWildcard(_) => todo!(),
                 sqlparser::ast::FunctionArgExpr::Wildcard => {
                     if function.name.to_string() == "count" {
-                        return Ok(Expr::Value(sqlparser::ast::Value::Boolean(true)))
+                        return Ok(Expr::Value(sqlparser::ast::Value::Boolean(true)));
                     }
                     Err(Error::Expression(format!(
                         "Unsupported argument {} for function {}",
-                        function.args[0].to_string(), function.name.to_string()
+                        function.args[0], function.name
                     )))
-                },
+                }
             },
             _ => Err(Error::Expression(format!(
                 "Unsupported function : {}",
-                function.args[0].to_string()
+                function.args[0]
             ))),
         }
     }
@@ -201,20 +200,20 @@ impl Executor for Aggregation {
 
         let mut res = Chunk::default();
 
-        for (key, value) in self.rows.as_ref().unwrap() {
+        for aggregate_row in self.rows.as_ref().unwrap().values() {
             let mut row: Row = Vec::new();
-            for (i, expr) in self.aggregates.iter().enumerate() {
+            for (i, _function) in self.aggregates.iter().enumerate() {
                 row.push(TupleValue {
-                    value: value.0[i].aggregate(),
+                    value: aggregate_row.0[i].aggregate(),
                 });
             }
-            for v in value.1.iter() {
+            for v in aggregate_row.1.iter() {
                 row.push(TupleValue { value: v.clone() });
             }
             res.data_chunks.push(row);
         }
 
-        // TODO(Dylan): hack to prevent looping back and reinitializing the accumulators
+        // TODO(Dylan): current we use a hack to prevent looping back and reinitializing the accumulators
         self.rows = Some(HashMap::new());
         Ok(res)
     }
