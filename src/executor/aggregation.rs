@@ -8,7 +8,7 @@ use crate::planner::OutputSchema;
 use crate::types::error::Error;
 use crate::types::{Chunk, Row, TupleValue};
 
-use super::expression::ExprEvaluator;
+use super::expression::{Caster, ExprEvaluator};
 
 type GroupByKey = Vec<String>;
 type AggregationColumns = Vec<Box<dyn Accumulator>>;
@@ -16,7 +16,7 @@ type NonAggregationColumns = Vec<Field>;
 
 pub trait Accumulator {
     fn accumulate(&mut self, field: &Field) -> Result<(), Error>;
-    fn aggregate(&self) -> Field;
+    fn aggregate(&self) -> Result<Field, Error>;
 }
 
 pub struct Aggregation {
@@ -157,6 +157,7 @@ impl Aggregation {
             "min" => Box::new(MinAccumulator::new()),
             "sum" => Box::new(SumAccumulator::new()),
             "count" => Box::new(CountAccumulator::new()),
+            "avg" => Box::new(AvgAccumulator::new()),
             _ => {
                 panic!("Unsupported function: {}", function.name); // TODO(Dylan): Error handling
             }
@@ -204,7 +205,7 @@ impl Executor for Aggregation {
             let mut row: Row = Vec::new();
             for (i, _function) in self.aggregates.iter().enumerate() {
                 row.push(TupleValue {
-                    value: aggregate_row.0[i].aggregate(),
+                    value: aggregate_row.0[i].aggregate()?,
                 });
             }
             for v in aggregate_row.1.iter() {
@@ -253,11 +254,11 @@ impl Accumulator for MaxAccumulator {
         Ok(())
     }
 
-    fn aggregate(&self) -> Field {
+    fn aggregate(&self) -> Result<Field, Error> {
         if self.max.is_none() {
-            return Field::Null;
+            return Ok(Field::Null);
         }
-        self.max.clone().unwrap()
+        Ok(self.max.clone().unwrap())
     }
 }
 
@@ -291,11 +292,11 @@ impl Accumulator for MinAccumulator {
         Ok(())
     }
 
-    fn aggregate(&self) -> Field {
+    fn aggregate(&self) -> Result<Field, Error> {
         if self.min.is_none() {
-            return Field::Null;
+            return Ok(Field::Null);
         }
-        self.min.clone().unwrap()
+        Ok(self.min.clone().unwrap())
     }
 }
 
@@ -327,11 +328,11 @@ impl Accumulator for SumAccumulator {
         Ok(())
     }
 
-    fn aggregate(&self) -> Field {
+    fn aggregate(&self) -> Result<Field, Error> {
         if self.sum.is_none() {
-            return Field::Null;
+            return Ok(Field::Null);
         }
-        self.sum.clone().unwrap()
+        Ok(self.sum.clone().unwrap())
     }
 }
 
@@ -354,7 +355,58 @@ impl Accumulator for CountAccumulator {
         Ok(())
     }
 
-    fn aggregate(&self) -> Field {
-        Field::Int(self.count)
+    fn aggregate(&self) -> Result<Field, Error> {
+        Ok(Field::Int(self.count))
+    }
+}
+
+struct AvgAccumulator {
+    count: i32,
+    sum: Option<Field>,
+}
+
+impl AvgAccumulator {
+    fn new() -> AvgAccumulator {
+        AvgAccumulator {
+            count: 0,
+            sum: None,
+        }
+    }
+}
+
+impl Accumulator for AvgAccumulator {
+    fn accumulate(&mut self, field: &Field) -> Result<(), Error> {
+        if *field == Field::Null {
+            return Ok(());
+        }
+        match self.sum {
+            Some(ref sum) => {
+                let x = ExprEvaluator::evaluate_binary_op(
+                    field,
+                    &sqlparser::ast::BinaryOperator::Plus,
+                    sum,
+                )?;
+                self.sum = Some(x);
+            }
+            None => {
+                self.sum = Some(field.clone());
+            }
+        }
+        self.count += 1;
+        Ok(())
+    }
+
+    fn aggregate(&self) -> Result<Field, Error> {
+        if self.sum.is_none() {
+            return Ok(Field::Null);
+        }
+        ExprEvaluator::evaluate_binary_op(
+            &Caster::cast(
+                self.sum.as_ref().unwrap(),
+                &sqlparser::ast::DataType::Float(None),
+            )?,
+            &sqlparser::ast::BinaryOperator::Divide,
+            &Field::Float(self.count as f32),
+        )
     }
 }

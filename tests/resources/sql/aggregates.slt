@@ -6,9 +6,9 @@ select max(animals.age), min(animals.age) from 'tests/resources/data/animals1.pa
 6 5
 
 query II rowsort
-select max(animals.age), min(animals.age) from 'tests/resources/data/animals1.parquet' as animals
+select max(animals.age), min(animals.age), avg(age), count(*), sum(animals.age) from 'tests/resources/data/animals1.parquet' as animals
 ----
-6 1
+6 1 3.5 6 21
 
 query II rowsort
 select max(animals.age) * 2, min(animals.age) - 1 from 'tests/resources/data/animals1.parquet' as animals group by animals.animal
