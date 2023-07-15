@@ -236,6 +236,10 @@ impl MaxAccumulator {
 
 impl Accumulator for MaxAccumulator {
     fn accumulate(&mut self, field: &Field) -> Result<(), Error> {
+        if *field == Field::Null {
+            return Ok(());
+        }
+        
         match self.max {
             Some(ref max) => {
                 let x = ExprEvaluator::evaluate_binary_op(
@@ -274,6 +278,10 @@ impl MinAccumulator {
 
 impl Accumulator for MinAccumulator {
     fn accumulate(&mut self, field: &Field) -> Result<(), Error> {
+        if *field == Field::Null {
+            return Ok(());
+        }
+
         match self.min {
             Some(ref min) => {
                 let x = ExprEvaluator::evaluate_binary_op(
@@ -312,6 +320,10 @@ impl SumAccumulator {
 
 impl Accumulator for SumAccumulator {
     fn accumulate(&mut self, field: &Field) -> Result<(), Error> {
+        if *field == Field::Null {
+            return Ok(());
+        }
+
         match self.sum {
             Some(ref sum) => {
                 let x = ExprEvaluator::evaluate_binary_op(

@@ -1,0 +1,21 @@
+query IIIII rowsort
+select * from 'tests/resources/data/movies2.parquet'
+----
+"a star is born" 5 6 6 1976
+"avengers" null 1 null 2012
+"carrie" null 3 null 1976
+"django" 8 8 8 2012
+"drive" 10 9 4 null
+"lion king" 2 null 5 1994
+"taxi driver" 9 8 7 1976
+"the shawshank redemption" 10 null 10 1994
+
+query III rowsort
+select count(score1), sum(movies.score1), max(movies.score1), min(movies.score1), avg(score1) from 'tests/resources/data/movies2.parquet' as movies
+----
+6 44 10 2 7.3333335
+
+query III rowsort
+select count(score1), sum(movies.score1), max(movies.score1), min(movies.score1), avg(score1) from 'tests/resources/data/movies2.parquet' as movies where false
+----
+0 null null null null

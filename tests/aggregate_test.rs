@@ -22,3 +22,13 @@ fn test_aggregates_2() {
         .run_file("tests/resources/sql/aggregates2.slt")
         .unwrap();
 }
+
+#[test]
+fn test_aggregates_3() {
+    let db = Database::new().unwrap();
+    let db_helper = DatabaseTestHelper(db);
+    let mut tester = sqllogictest::Runner::new(db_helper);
+    tester
+        .run_file("tests/resources/sql/aggregates3.slt")
+        .unwrap();
+}
