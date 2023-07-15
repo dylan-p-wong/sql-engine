@@ -124,6 +124,20 @@ impl Aggregation {
                 }
             }
         }
+        
+        //  if there are no rows we need to insert an empty row with empty accumulators
+        if rows.keys().len() == 0 {
+            let accumulators: Vec<Box<dyn Accumulator>> = self
+                        .aggregates
+                        .iter()
+                        .map(|a| self.new_accumulator(a))
+                        .collect();
+            let mut non_aggregated_values: Vec<Field> = Vec::new();
+            for _ in 0..self.non_aggregates.len() {
+                non_aggregated_values.push(Field::Null);
+            }
+            rows.insert(Vec::new(), (accumulators, non_aggregated_values));
+        }
 
         self.rows = Some(rows);
         Ok(())
@@ -137,6 +151,12 @@ impl Aggregation {
             }
             "min" => {
                 return Box::new(MinAccumulator::new());
+            }
+            "sum" => {
+                return Box::new(SumAccumulator::new());
+            }
+            "count" => {
+                return Box::new(CountAccumulator::new());
             }
             _ => {
                 panic!("Unsupported function: {}", function.name.to_string()); // TODO(Dylan): Error handling
@@ -156,7 +176,15 @@ impl Aggregation {
             sqlparser::ast::FunctionArg::Unnamed(fa) => match fa {
                 sqlparser::ast::FunctionArgExpr::Expr(e) => Ok(e.clone()),
                 sqlparser::ast::FunctionArgExpr::QualifiedWildcard(_) => todo!(),
-                sqlparser::ast::FunctionArgExpr::Wildcard => todo!(),
+                sqlparser::ast::FunctionArgExpr::Wildcard => {
+                    if function.name.to_string() == "count" {
+                        return Ok(Expr::Value(sqlparser::ast::Value::Boolean(true)))
+                    }
+                    Err(Error::Expression(format!(
+                        "Unsupported argument {} for function {}",
+                        function.args[0].to_string(), function.name.to_string()
+                    )))
+                },
             },
             _ => Err(Error::Expression(format!(
                 "Unsupported function : {}",
@@ -185,7 +213,9 @@ impl Executor for Aggregation {
             }
             res.data_chunks.push(row);
         }
-        self.rows = None;
+
+        // TODO(Dylan): hack to prevent looping back and reinitializing the accumulators
+        self.rows = Some(HashMap::new());
         Ok(res)
     }
 
@@ -225,6 +255,9 @@ impl Accumulator for MaxAccumulator {
     }
 
     fn aggregate(&self) -> Field {
+        if self.max.is_none() {
+            return Field::Null;
+        }
         self.max.clone().unwrap()
     }
 }
@@ -260,6 +293,69 @@ impl Accumulator for MinAccumulator {
     }
 
     fn aggregate(&self) -> Field {
+        if self.min.is_none() {
+            return Field::Null;
+        }
         self.min.clone().unwrap()
+    }
+}
+
+struct SumAccumulator {
+    sum: Option<Field>,
+}
+
+impl SumAccumulator {
+    fn new() -> SumAccumulator {
+        SumAccumulator { sum: None }
+    }
+}
+
+impl Accumulator for SumAccumulator {
+    fn accumulate(&mut self, field: &Field) -> Result<(), Error> {
+        match self.sum {
+            Some(ref sum) => {
+                let x = ExprEvaluator::evaluate_binary_op(
+                    field,
+                    &sqlparser::ast::BinaryOperator::Plus,
+                    sum,
+                )?;
+                self.sum = Some(x);
+            }
+            None => {
+                self.sum = Some(field.clone());
+            }
+        }
+        Ok(())
+    }
+
+    fn aggregate(&self) -> Field {
+        if self.sum.is_none() {
+            return Field::Null;
+        }
+        self.sum.clone().unwrap()
+    }
+}
+
+struct CountAccumulator {
+    count: i32,
+}
+
+impl CountAccumulator {
+    fn new() -> CountAccumulator {
+        CountAccumulator { count: 0 }
+    }
+}
+
+impl Accumulator for CountAccumulator {
+    fn accumulate(&mut self, field: &Field) -> Result<(), Error> {
+        if *field == Field::Null {
+            return Ok(());
+        }
+        self.count += 1;
+        Ok(())
+    }
+
+    fn aggregate(&self) -> Field {
+        Field::Int(self.count)
     }
 }
