@@ -9,8 +9,8 @@ use crate::planner::OutputSchema;
 use crate::types::error::Error;
 use crate::types::{Chunk, Row, TupleValue};
 
-use super::VECTOR_SIZE_THRESHOLD;
 use super::expression::{Caster, ExprEvaluator};
+use super::VECTOR_SIZE_THRESHOLD;
 
 type GroupByKey = Vec<String>;
 type AggregationColumns = Vec<Box<dyn Accumulator>>;
