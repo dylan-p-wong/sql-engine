@@ -1,3 +1,4 @@
+use std::cmp;
 use std::collections::HashMap;
 
 use parquet::record::Field;
@@ -8,6 +9,7 @@ use crate::planner::OutputSchema;
 use crate::types::error::Error;
 use crate::types::{Chunk, Row, TupleValue};
 
+use super::VECTOR_SIZE_THRESHOLD;
 use super::expression::{Caster, ExprEvaluator};
 
 type GroupByKey = Vec<String>;
@@ -26,7 +28,7 @@ pub struct Aggregation {
     non_aggregates: Vec<SelectItem>,
     group_by: Vec<Expr>,
 
-    rows: Option<HashMap<GroupByKey, (AggregationColumns, NonAggregationColumns)>>,
+    rows: Option<Vec<Row>>,
 }
 
 impl Aggregation {
@@ -53,7 +55,7 @@ impl Aggregation {
             return Ok(());
         }
 
-        let mut rows: HashMap<GroupByKey, (AggregationColumns, NonAggregationColumns)> =
+        let mut rows_map: HashMap<GroupByKey, (AggregationColumns, NonAggregationColumns)> =
             HashMap::new();
 
         loop {
@@ -76,7 +78,7 @@ impl Aggregation {
                     .map(|field| field.to_string())
                     .collect::<GroupByKey>();
 
-                if let std::collections::hash_map::Entry::Vacant(e) = rows.entry(key.clone()) {
+                if let std::collections::hash_map::Entry::Vacant(e) = rows_map.entry(key.clone()) {
                     let mut accumulators: AggregationColumns = self
                         .aggregates
                         .iter()
@@ -118,7 +120,7 @@ impl Aggregation {
 
                     e.insert((accumulators, non_aggregated_values));
                 } else {
-                    let value = rows.get_mut(&key).unwrap();
+                    let value = rows_map.get_mut(&key).unwrap();
 
                     for (i, function) in self.aggregates.iter().enumerate() {
                         let field = ExprEvaluator::evaluate(
@@ -133,7 +135,7 @@ impl Aggregation {
         }
 
         //  if there are no rows we need to insert an empty row with empty accumulators
-        if rows.keys().len() == 0 {
+        if rows_map.keys().len() == 0 {
             let accumulators: AggregationColumns = self
                 .aggregates
                 .iter()
@@ -143,7 +145,23 @@ impl Aggregation {
             for _ in 0..self.non_aggregates.len() {
                 non_aggregated_values.push(Field::Null);
             }
-            rows.insert(Vec::new(), (accumulators, non_aggregated_values));
+            rows_map.insert(Vec::new(), (accumulators, non_aggregated_values));
+        }
+
+        let mut rows = Vec::new();
+
+        // calculate the rows
+        for aggregate_row in rows_map.values() {
+            let mut row: Row = Vec::new();
+            for (i, _function) in self.aggregates.iter().enumerate() {
+                row.push(TupleValue {
+                    value: aggregate_row.0[i].aggregate()?,
+                });
+            }
+            for v in aggregate_row.1.iter() {
+                row.push(TupleValue { value: v.clone() });
+            }
+            rows.push(row);
         }
 
         self.rows = Some(rows);
@@ -201,21 +219,12 @@ impl Executor for Aggregation {
 
         let mut res = Chunk::default();
 
-        for aggregate_row in self.rows.as_ref().unwrap().values() {
-            let mut row: Row = Vec::new();
-            for (i, _function) in self.aggregates.iter().enumerate() {
-                row.push(TupleValue {
-                    value: aggregate_row.0[i].aggregate()?,
-                });
-            }
-            for v in aggregate_row.1.iter() {
-                row.push(TupleValue { value: v.clone() });
-            }
-            res.data_chunks.push(row);
-        }
+        let n = cmp::min(VECTOR_SIZE_THRESHOLD, self.rows.as_ref().unwrap().len());
 
-        // TODO(Dylan): current we use a hack to prevent looping back and reinitializing the accumulators
-        self.rows = Some(HashMap::new());
+        self.rows.as_mut().unwrap().drain(0..n).for_each(|row| {
+            res.data_chunks.push(row);
+        });
+
         Ok(res)
     }
 
