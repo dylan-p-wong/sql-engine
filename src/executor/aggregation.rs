@@ -239,7 +239,7 @@ impl Accumulator for MaxAccumulator {
         if *field == Field::Null {
             return Ok(());
         }
-        
+
         match self.max {
             Some(ref max) => {
                 let x = ExprEvaluator::evaluate_binary_op(

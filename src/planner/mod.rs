@@ -142,38 +142,6 @@ impl Planner {
         Ok(plans.pop().unwrap())
     }
 
-    // changes the expression to swap an aggreate function with an internal identifier that can be used to reference the aggregate later
-    fn extract_aggregates(
-        item: &mut Expr,
-        next_aggregate_number: &mut i32,
-    ) -> Result<Vec<Function>, Error> {
-        match item {
-            Expr::Function(function) => {
-                // TODO(Dylan): verify that there are no nested aggregates
-                let function = function.clone();
-                // we replace the function with a new identifier
-                *item = Expr::Identifier(Ident::new(format!("#agg{}", next_aggregate_number))); // todo fix the number
-                *next_aggregate_number += 1;
-                Ok(vec![function])
-            }
-            Expr::UnaryOp { op: _op, expr } => {
-                Self::extract_aggregates(expr, next_aggregate_number)
-            }
-            Expr::BinaryOp {
-                left,
-                op: _op,
-                right,
-            } => {
-                let mut l = Self::extract_aggregates(left, next_aggregate_number)?;
-                let mut r = Self::extract_aggregates(right, next_aggregate_number)?;
-
-                l.append(&mut r);
-                Ok(l)
-            }
-            _ => Ok(vec![]),
-        }
-    }
-
     fn build_statement(&self, statement: &Statement) -> Result<Plan, Error> {
         match statement {
             Statement::Query(query) => {
@@ -194,76 +162,27 @@ impl Planner {
                         let node = self.build_from_clause(from)?;
 
                         // Build WHERE
-                        let node = if selection.is_some() {
-                            let filter = selection.as_ref().unwrap();
-                            PlanNode {
-                                output_schema: node.output_schema.clone(),
-                                node: Node::Filter {
-                                    filter: filter.clone(),
-                                    child: Box::new(node),
-                                },
-                            }
-                        } else {
-                            node
-                        };
-
-                        let mut select_items = projection.clone();
-
-                        // we need to extract the aggregate functions and handle those separately and extract the identifiers in the select items with aggregate functions
-                        // this allows to to get all the values we need to perform the aggregate functions and projections
-                        // we replace the aggregates with an internal identifier #agg0, #agg1, etc.
-                        // alias is handled later in the final projection
-                        let mut all_aggregates = Vec::new();
-                        let mut total_aggregates = 0;
-                        let mut non_aggregate_projections = Vec::new();
-                        let mut seen = HashSet::new();
-
-                        for item in select_items.iter_mut() {
-                            match item {
-                                SelectItem::UnnamedExpr(ref mut expr) => {
-                                    let mut aggregates =
-                                        Self::extract_aggregates(expr, &mut total_aggregates)?;
-                                    if aggregates.is_empty() {
-                                        non_aggregate_projections.push(item.clone());
-                                    } else {
-                                        all_aggregates.append(&mut aggregates);
-                                        non_aggregate_projections.append(
-                                            &mut Self::extract_identifiers_as_select_items(
-                                                expr, &mut seen,
-                                            ),
-                                        );
-                                    }
-                                }
-                                SelectItem::ExprWithAlias { ref mut expr, .. } => {
-                                    let mut aggregates =
-                                        Self::extract_aggregates(expr, &mut total_aggregates)?;
-                                    if aggregates.is_empty() {
-                                        non_aggregate_projections.push(item.clone());
-                                    } else {
-                                        all_aggregates.append(&mut aggregates);
-                                        non_aggregate_projections.append(
-                                            &mut Self::extract_identifiers_as_select_items(
-                                                expr, &mut seen,
-                                            ),
-                                        );
-                                    }
-                                }
-                                _ => {}
-                            }
-                        }
+                        let node = self.build_where_clause(selection, node)?;
 
                         // Build PROJECTION
-                        let node = if all_aggregates.is_empty() {
-                            self.build_non_aggregate_statement(node, &select_items)?
-                        } else {
+                        let mut select_items = projection.clone();
+
+                        let extract_aggregates_result =
+                            self.extract_aggregates(&mut select_items)?;
+
+                        let node = if let Some((all_aggregates, non_aggregate_projections)) =
+                            extract_aggregates_result
+                        {
                             self.build_aggregate_statement(
                                 node,
                                 &select_items.clone(),
-                                &mut non_aggregate_projections,
+                                &non_aggregate_projections,
                                 &all_aggregates,
                                 group_by,
                                 having,
                             )?
+                        } else {
+                            self.build_non_aggregate_statement(node, &select_items)?
                         };
 
                         // Build ORDER BY
@@ -283,42 +202,57 @@ impl Planner {
         }
     }
 
-    fn extract_identifiers_as_select_items(
-        expr: &Expr,
-        seen: &mut HashSet<String>,
-    ) -> Vec<SelectItem> {
-        let mut literals = Vec::new();
+    // this function returns the aggregate functions and the select items without aggregates if aggregates are found or else None
+    #[allow(clippy::type_complexity)]
+    fn extract_aggregates(
+        &self,
+        select_items: &mut [SelectItem],
+    ) -> Result<Option<(Vec<Function>, Vec<SelectItem>)>, Error> {
+        // we need to extract the aggregate functions and handle those separately and extract the identifiers in the select items with aggregate functions
+        // this allows to to get all the values we need to perform the aggregate functions and projections
+        // we replace the aggregates with an internal identifier #agg0, #agg1, etc.
+        // alias is handled later in the final projection
 
-        match expr {
-            Expr::Identifier(ident) => {
-                // TODO(Dylan): This is a hack since we do not want to include the aggregates here
-                if ident.value.starts_with("#agg") {
-                    return literals;
-                }
+        let mut all_aggregates = Vec::new();
+        let mut total_aggregates = 0;
+        let mut non_aggregate_projections = Vec::new();
+        let mut seen = HashSet::new();
 
-                // This removes duplicates identifiers
-                if !seen.contains(&ident.value) {
-                    literals.push(SelectItem::UnnamedExpr(Expr::Identifier(ident.clone())));
-                    seen.insert(ident.value.clone());
+        for item in select_items.iter_mut() {
+            match item {
+                SelectItem::UnnamedExpr(ref mut expr) => {
+                    let mut aggregates =
+                        Self::extract_aggregates_from_expr(expr, &mut total_aggregates)?;
+                    if aggregates.is_empty() {
+                        non_aggregate_projections.push(item.clone());
+                    } else {
+                        all_aggregates.append(&mut aggregates);
+                        non_aggregate_projections.append(
+                            &mut Self::extract_identifiers_as_select_items(expr, &mut seen),
+                        );
+                    }
                 }
-            }
-            Expr::CompoundIdentifier(..) => {
-                if !seen.contains(expr.to_string().as_str()) {
-                    literals.push(SelectItem::UnnamedExpr(expr.clone()));
-                    seen.insert(expr.to_string());
+                SelectItem::ExprWithAlias { ref mut expr, .. } => {
+                    let mut aggregates =
+                        Self::extract_aggregates_from_expr(expr, &mut total_aggregates)?;
+                    if aggregates.is_empty() {
+                        non_aggregate_projections.push(item.clone());
+                    } else {
+                        all_aggregates.append(&mut aggregates);
+                        non_aggregate_projections.append(
+                            &mut Self::extract_identifiers_as_select_items(expr, &mut seen),
+                        );
+                    }
                 }
+                _ => {}
             }
-            Expr::BinaryOp { left, op: _, right } => {
-                literals.append(&mut Self::extract_identifiers_as_select_items(left, seen));
-                literals.append(&mut Self::extract_identifiers_as_select_items(right, seen));
-            }
-            Expr::UnaryOp { op: _, expr } => {
-                literals.append(&mut Self::extract_identifiers_as_select_items(expr, seen));
-            }
-            _ => {}
         }
 
-        literals
+        if all_aggregates.is_empty() {
+            Ok(None)
+        } else {
+            Ok(Some((all_aggregates, non_aggregate_projections)))
+        }
     }
 
     // builds a projection for select items without aggregates, group by or having
@@ -363,7 +297,7 @@ impl Planner {
         &self,
         child: PlanNode,
         end_projection: &Vec<SelectItem>,
-        non_aggregate_projections: &mut Vec<SelectItem>,
+        non_aggregate_projections: &Vec<SelectItem>,
         aggregates: &Vec<Function>,
         group_by: &[Expr],
         _having: &Option<Expr>,
@@ -430,11 +364,7 @@ impl Planner {
                 SelectItem::Wildcard(_) => {
                     output_schema.append(&child.output_schema.clone())?;
                 }
-                _ => {
-                    return Err(Error::Planner(
-                        "Only UnnamedExpr and ExprWithAlias supported".to_string(),
-                    ))
-                }
+                _ => return Err(Error::Planner(format!("{} not supported", item))),
             }
         }
 
@@ -528,5 +458,95 @@ impl Planner {
             }
             _ => Err(Error::Planner("JOIN not supported".to_string())),
         }
+    }
+
+    fn build_where_clause(
+        &self,
+        selection: &Option<Expr>,
+        child: PlanNode,
+    ) -> Result<PlanNode, Error> {
+        if selection.is_some() {
+            let filter = selection.as_ref().unwrap();
+            Ok(PlanNode {
+                output_schema: child.output_schema.clone(),
+                node: Node::Filter {
+                    filter: filter.clone(),
+                    child: Box::new(child),
+                },
+            })
+        } else {
+            Ok(child)
+        }
+    }
+
+    // changes the expression to swap an aggreate function with an internal identifier that can be used to reference the aggregate later
+    fn extract_aggregates_from_expr(
+        item: &mut Expr,
+        next_aggregate_number: &mut i32,
+    ) -> Result<Vec<Function>, Error> {
+        match item {
+            Expr::Function(function) => {
+                // TODO(Dylan): verify that there are no nested aggregates
+                let function = function.clone();
+                // we replace the function with a new identifier
+                *item = Expr::Identifier(Ident::new(format!("#agg{}", next_aggregate_number))); // todo fix the number
+                *next_aggregate_number += 1;
+                Ok(vec![function])
+            }
+            Expr::UnaryOp { op: _op, expr } => {
+                Self::extract_aggregates_from_expr(expr, next_aggregate_number)
+            }
+            Expr::BinaryOp {
+                left,
+                op: _op,
+                right,
+            } => {
+                let mut l = Self::extract_aggregates_from_expr(left, next_aggregate_number)?;
+                let mut r = Self::extract_aggregates_from_expr(right, next_aggregate_number)?;
+
+                l.append(&mut r);
+                Ok(l)
+            }
+            _ => Ok(vec![]),
+        }
+    }
+
+    // extracts the identifiers from an expression
+    fn extract_identifiers_as_select_items(
+        expr: &Expr,
+        seen: &mut HashSet<String>,
+    ) -> Vec<SelectItem> {
+        let mut literals = Vec::new();
+
+        match expr {
+            Expr::Identifier(ident) => {
+                // TODO(Dylan): This is a hack since we do not want to include the aggregates here
+                if ident.value.starts_with("#agg") {
+                    return literals;
+                }
+
+                // This removes duplicates identifiers
+                if !seen.contains(&ident.value) {
+                    literals.push(SelectItem::UnnamedExpr(Expr::Identifier(ident.clone())));
+                    seen.insert(ident.value.clone());
+                }
+            }
+            Expr::CompoundIdentifier(..) => {
+                if !seen.contains(expr.to_string().as_str()) {
+                    literals.push(SelectItem::UnnamedExpr(expr.clone()));
+                    seen.insert(expr.to_string());
+                }
+            }
+            Expr::BinaryOp { left, op: _, right } => {
+                literals.append(&mut Self::extract_identifiers_as_select_items(left, seen));
+                literals.append(&mut Self::extract_identifiers_as_select_items(right, seen));
+            }
+            Expr::UnaryOp { op: _, expr } => {
+                literals.append(&mut Self::extract_identifiers_as_select_items(expr, seen));
+            }
+            _ => {}
+        }
+
+        literals
     }
 }
