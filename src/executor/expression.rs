@@ -24,6 +24,7 @@ impl ExprEvaluator {
 
     pub fn evaluate(expr: &Expr, row: &Row, columns: &OutputSchema) -> Result<Field, Error> {
         match expr {
+            Expr::Nested(expr) => Self::evaluate(expr, row, columns),
             Expr::UnaryOp { op, expr } => Self::evaluate_unary_op(op, expr, row, columns),
             Expr::BinaryOp { left, op, right } => {
                 let left = Self::evaluate(left, row, columns)?;
@@ -56,6 +57,7 @@ impl ExprEvaluator {
         row: &Row,
         output_schema: &OutputSchema,
     ) -> Result<Field, Error> {
+        assert!(output_schema.columns.len() == row.len());
         let index = output_schema.resolve(&ident.value)?;
         Ok(row[index].value.clone())
     }
@@ -241,5 +243,51 @@ impl BinaryOpEvaluator {
 
     fn greater_than_or_equal(left: &Field, right: &Field) -> Result<Field, Error> {
         Self::less_than_or_equal(right, left)
+    }
+}
+
+pub struct Caster {}
+
+impl Caster {
+    pub fn cast(field: &Field, data_type: &sqlparser::ast::DataType) -> Result<Field, Error> {
+        match data_type {
+            sqlparser::ast::DataType::Int(_) => match field {
+                Field::Int(i) => Ok(Field::Int(*i)),
+                Field::Long(l) => Ok(Field::Int(*l as i32)),
+                Field::Float(f) => Ok(Field::Int(*f as i32)),
+                Field::Double(d) => Ok(Field::Int(*d as i32)),
+                Field::Str(s) => Ok(Field::Int(s.parse::<i32>().unwrap())),
+                _ => Err(Error::Expression(format!(
+                    "Unable to cast {} to Int",
+                    field
+                ))),
+            },
+            sqlparser::ast::DataType::Float(_) => match field {
+                Field::Int(i) => Ok(Field::Float(*i as f32)),
+                Field::Long(l) => Ok(Field::Float(*l as f32)),
+                Field::Float(f) => Ok(Field::Float(*f)),
+                Field::Double(d) => Ok(Field::Float(*d as f32)),
+                Field::Str(s) => Ok(Field::Float(s.parse::<f32>().unwrap())),
+                _ => Err(Error::Expression(format!(
+                    "Unable to cast {} to Float",
+                    field
+                ))),
+            },
+            sqlparser::ast::DataType::Double => match field {
+                Field::Int(i) => Ok(Field::Double(*i as f64)),
+                Field::Long(l) => Ok(Field::Double(*l as f64)),
+                Field::Float(f) => Ok(Field::Double(*f as f64)),
+                Field::Double(d) => Ok(Field::Double(*d)),
+                Field::Str(s) => Ok(Field::Double(s.parse::<f64>().unwrap())),
+                _ => Err(Error::Expression(format!(
+                    "Unable to cast {} to Float",
+                    field
+                ))),
+            },
+            _ => Err(Error::Expression(format!(
+                "Unsupported cast data type: {}",
+                data_type
+            ))),
+        }
     }
 }

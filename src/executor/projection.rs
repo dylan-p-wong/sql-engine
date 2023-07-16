@@ -54,13 +54,21 @@ impl Executor for Projection {
                             )?;
                             new_row.push(TupleValue { value: e });
                         }
+                        SelectItem::ExprWithAlias { expr, .. } => {
+                            let e = ExprEvaluator::evaluate(
+                                expr,
+                                &row,
+                                &self.child.get_output_schema(),
+                            )?;
+                            new_row.push(TupleValue { value: e });
+                        }
                         SelectItem::Wildcard(_) => {
                             for col in &row {
                                 new_row.push(col.clone());
                             }
                         }
                         _ => {
-                            return Err(Error::Execution("SelectItem not supported".to_string()));
+                            return Err(Error::Execution(format!("{} not supported", item)));
                         }
                     }
                 }

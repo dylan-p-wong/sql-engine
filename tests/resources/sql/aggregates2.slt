@@ -1,0 +1,69 @@
+query IIIII rowsort
+select * from 'tests/resources/data/movies1.parquet' as movies
+----
+"a star is born" 5 6 6 1976
+"avengers" 2 1 6 2012
+"carrie" 2 3 0 1976
+"django" 8 8 8 2012
+"drive" 10 9 4 2011
+"lion king" 2 3 5 1994
+"taxi driver" 9 8 7 1976
+"the shawshank redemption" 10 9 10 1994
+
+query IIIII rowsort
+select * from 'tests/resources/data/movies1.parquet' as movies where movies.year=1976
+----
+"a star is born" 5 6 6 1976
+"carrie" 2 3 0 1976
+"taxi driver" 9 8 7 1976
+
+query III rowsort
+select sum(movies.score1), max(movies.score1), min(movies.score1) from 'tests/resources/data/movies1.parquet' as movies where movies.year=1976
+----
+16 9 2
+
+query III rowsort
+select sum(movies.score1), max(movies.score1), min(movies.score1), year from 'tests/resources/data/movies1.parquet' as movies group by movies.year
+----
+10 10 10 2011
+10 8 2 2012
+12 10 2 1994
+16 9 2 1976
+
+query III rowsort
+select sum(movies.score1 + movies.score2 + movies.score3), year from 'tests/resources/data/movies1.parquet' as movies where movies.year=1976
+----
+46 1976
+
+query I rowsort
+select count(*) from 'tests/resources/data/movies1.parquet'
+----
+8
+
+query IIIII rowsort
+select count(*), sum(score1), min(score1), max(score1), score1 from 'tests/resources/data/movies1.parquet' where false
+----
+0 null null null null
+
+query II rowsort
+select min(score1) * score2, max(score1) * score2 from 'tests/resources/data/movies1.parquet'
+----
+16 80
+
+query II rowsort
+select min(score1) * movies.score2, max(score1) * movies.score2 from 'tests/resources/data/movies1.parquet' as movies
+----
+16 80
+
+query II rowsort
+select avg(movies.score1), avg(score2) from 'tests/resources/data/movies1.parquet' as movies
+----
+6.0 5.875
+
+query III rowsort
+select avg(movies.score1), avg(score2), year from 'tests/resources/data/movies1.parquet' as movies group by year
+----
+10.0 9.0 2011
+5.0 4.5 2012
+5.3333335 5.6666665 1976
+6.0 6.0 1994
