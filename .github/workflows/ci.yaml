@@ -19,7 +19,7 @@ jobs:
         with:
           profile: minimal
           toolchain: stable
-      - name: Run tests
+      - name: Tests
         uses: actions-rs/cargo@v1
         with:
           command: test
@@ -32,12 +32,22 @@ jobs:
         with:
           profile: minimal
           toolchain: stable
-          components: rustfmt, clippy
+          components: rustfmt
       - name: Format
         uses: actions-rs/cargo@v1
         with:
           command: fmt
           args: --all -- --check
+
+  clippy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+          components: clippy
       - name: Clippy
         uses: actions-rs/cargo@v1
         with:
