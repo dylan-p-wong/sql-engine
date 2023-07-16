@@ -83,7 +83,7 @@ impl Aggregation {
                         .aggregates
                         .iter()
                         .map(|a| self.new_accumulator(a))
-                        .collect();
+                        .collect::<Result<AggregationColumns, Error>>()?;
                     for (i, function) in self.aggregates.iter().enumerate() {
                         let field = ExprEvaluator::evaluate(
                             &self.get_expr(function)?,
@@ -140,7 +140,7 @@ impl Aggregation {
                 .aggregates
                 .iter()
                 .map(|a| self.new_accumulator(a))
-                .collect();
+                .collect::<Result<AggregationColumns, Error>>()?;
             let mut non_aggregated_values: NonAggregationColumns = Vec::new();
             for _ in 0..self.non_aggregates.len() {
                 non_aggregated_values.push(Field::Null);
@@ -168,17 +168,17 @@ impl Aggregation {
         Ok(())
     }
 
-    fn new_accumulator(&self, function: &Function) -> Box<dyn Accumulator> {
-        // TODO(Dylan): Implement other functions
+    fn new_accumulator(&self, function: &Function) -> Result<Box<dyn Accumulator>, Error> {
         match function.name.to_string().as_str() {
-            "max" => Box::new(MaxAccumulator::new()),
-            "min" => Box::new(MinAccumulator::new()),
-            "sum" => Box::new(SumAccumulator::new()),
-            "count" => Box::new(CountAccumulator::new()),
-            "avg" => Box::new(AvgAccumulator::new()),
-            _ => {
-                panic!("Unsupported function: {}", function.name); // TODO(Dylan): Error handling
-            }
+            "max" => Ok(Box::new(MaxAccumulator::new())),
+            "min" => Ok(Box::new(MinAccumulator::new())),
+            "sum" => Ok(Box::new(SumAccumulator::new())),
+            "count" => Ok(Box::new(CountAccumulator::new())),
+            "avg" => Ok(Box::new(AvgAccumulator::new())),
+            _ => Err(Error::Execution(format!(
+                "Unsupported function: {}",
+                function.name
+            ))),
         }
     }
 
@@ -193,7 +193,6 @@ impl Aggregation {
         match &function.args[0] {
             sqlparser::ast::FunctionArg::Unnamed(fa) => match fa {
                 sqlparser::ast::FunctionArgExpr::Expr(e) => Ok(e.clone()),
-                sqlparser::ast::FunctionArgExpr::QualifiedWildcard(_) => todo!(),
                 sqlparser::ast::FunctionArgExpr::Wildcard => {
                     if function.name.to_string() == "count" {
                         return Ok(Expr::Value(sqlparser::ast::Value::Boolean(true)));
@@ -203,6 +202,10 @@ impl Aggregation {
                         function.args[0], function.name
                     )))
                 }
+                _ => Err(Error::Expression(format!(
+                    "Unsupported argument {} for function {}",
+                    function.args[0], function.name
+                ))),
             },
             _ => Err(Error::Expression(format!(
                 "Unsupported function : {}",
@@ -214,7 +217,6 @@ impl Aggregation {
 
 impl Executor for Aggregation {
     fn next_chunk(&mut self) -> Result<Chunk, Error> {
-        // TODO(Dylan): Improve this handling and add vectorized processing
         self.init_accumulators()?;
 
         let mut res = Chunk::default();

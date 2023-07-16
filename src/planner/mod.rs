@@ -224,7 +224,9 @@ impl Planner {
                     let mut aggregates =
                         Self::extract_aggregates_from_expr(expr, &mut total_aggregates)?;
                     if aggregates.is_empty() {
-                        non_aggregate_projections.push(item.clone());
+                        non_aggregate_projections.append(
+                            &mut Self::extract_identifiers_as_select_items(expr, &mut seen),
+                        );
                     } else {
                         all_aggregates.append(&mut aggregates);
                         non_aggregate_projections.append(
@@ -236,7 +238,9 @@ impl Planner {
                     let mut aggregates =
                         Self::extract_aggregates_from_expr(expr, &mut total_aggregates)?;
                     if aggregates.is_empty() {
-                        non_aggregate_projections.push(item.clone());
+                        non_aggregate_projections.append(
+                            &mut Self::extract_identifiers_as_select_items(expr, &mut seen),
+                        );
                     } else {
                         all_aggregates.append(&mut aggregates);
                         non_aggregate_projections.append(
@@ -335,7 +339,7 @@ impl Planner {
 
         // plan a projection to get to the original projection
         node = PlanNode {
-            output_schema: self.get_output_schema_from_projection(end_projection, &node)?, // change this
+            output_schema: self.get_output_schema_from_projection(end_projection, &node)?,
             node: Node::Projection {
                 select: end_projection.clone(),
                 child: Box::new(node),

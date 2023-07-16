@@ -1,0 +1,36 @@
+query IIIII rowsort
+select * from 'tests/resources/data/movies2.parquet'
+----
+"a star is born" 5 6 6 1976
+"avengers" null 1 null 2012
+"carrie" null 3 null 1976
+"django" 8 8 8 2012
+"drive" 10 9 4 null
+"lion king" 2 null 5 1994
+"taxi driver" 9 8 7 1976
+"the shawshank redemption" 10 null 10 1994
+
+statement error Planner Error: Field not found: dne
+select count(dne) from 'tests/resources/data/movies2.parquet'
+
+query IIII
+select * from 'tests/resources/data/animals2.parquet' INNER JOIN 'tests/resources/data/animals2.parquet'
+----
+"dog" 1 "dog" 1
+"dog" 1 "dog" 2
+"dog" 2 "dog" 1
+"dog" 2 "dog" 2
+
+query
+select count(*), sum(a1.age + a2.age) from 'tests/resources/data/animals2.parquet' as a1 INNER JOIN 'tests/resources/data/animals2.parquet' as a2
+----
+4 12
+
+statement error Expression Error: Unsupported argument *
+select max(*) from 'tests/resources/data/movies2.parquet'
+
+statement error Execution Error: Unsupported function: dne
+select dne(*) from 'tests/resources/data/movies2.parquet'
+
+statement error Expression Error: Unsupported expression: min
+select max(min(score1)) from 'tests/resources/data/movies2.parquet'
