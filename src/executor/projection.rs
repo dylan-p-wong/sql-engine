@@ -1,5 +1,3 @@
-use std::mem::swap;
-
 use crate::{
     executor::expression::ExprEvaluator,
     planner::OutputSchema,
@@ -7,14 +5,14 @@ use crate::{
 };
 use sqlparser::ast::SelectItem;
 
-use super::{Executor, VECTOR_SIZE_THRESHOLD};
+use super::{Buffer, Executor, VECTOR_SIZE_THRESHOLD};
 
 pub struct Projection {
     output_schema: OutputSchema,
     select: Vec<SelectItem>,
     child: Box<dyn Executor>,
 
-    buffer: Chunk,
+    buffer: Buffer,
 }
 
 impl Projection {
@@ -24,7 +22,7 @@ impl Projection {
         output_schema: OutputSchema,
     ) -> Result<Box<Projection>, Error> {
         Ok(Box::new(Projection {
-            buffer: Chunk::default(),
+            buffer: Buffer::new(),
             select,
             child,
             output_schema,
@@ -76,13 +74,7 @@ impl Executor for Projection {
             }
         }
 
-        if self.buffer.is_empty() {
-            return Ok(Chunk::default());
-        }
-
-        let mut res = Chunk::new();
-        swap(&mut res, &mut self.buffer);
-        Ok(res)
+        Ok(self.buffer.get_sized_chunk(VECTOR_SIZE_THRESHOLD))
     }
 
     fn get_output_schema(&self) -> OutputSchema {

@@ -2,18 +2,17 @@ use crate::executor::expression::ExprEvaluator;
 use crate::executor::Executor;
 use crate::planner::OutputSchema;
 use crate::types::error::Error;
-use crate::types::{Chunk, TupleValue};
+use crate::types::Chunk;
 use sqlparser::ast::Expr;
-use std::mem::swap;
 
-use super::VECTOR_SIZE_THRESHOLD;
+use super::{Buffer, VECTOR_SIZE_THRESHOLD};
 
 pub struct Filter {
     output_schema: OutputSchema,
     filter: Expr,
     child: Box<dyn Executor>,
 
-    buffer: Chunk,
+    buffer: Buffer,
 }
 
 impl Filter {
@@ -26,7 +25,7 @@ impl Filter {
             filter,
             child,
             output_schema,
-            buffer: Chunk::default(),
+            buffer: Buffer::new(),
         }))
     }
 }
@@ -40,33 +39,15 @@ impl Executor for Filter {
                 break;
             }
 
-            let helper_chunks: Result<Vec<_>, _> = next_chunk
-                .get_rows()
-                .iter()
-                .map(|row| {
-                    let e = ExprEvaluator::evaluate(&self.filter, row, &self.output_schema)?;
-                    Ok((row, e))
-                })
-                .collect();
-
-            let filtered_chunks: Vec<Vec<TupleValue>> = helper_chunks?
-                .into_iter()
-                .filter(|(_, field)| ExprEvaluator::to_boolean(field))
-                .map(|(row, _)| row.clone())
-                .collect();
-
-            for row in filtered_chunks {
-                self.buffer.add_row(row)
+            for row in next_chunk.get_rows().iter() {
+                let e = ExprEvaluator::evaluate(&self.filter, row, &self.output_schema)?;
+                if ExprEvaluator::to_boolean(&e) {
+                    self.buffer.add_row(row.clone());
+                }
             }
         }
 
-        if self.buffer.is_empty() {
-            return Ok(Chunk::default());
-        }
-
-        let mut res = Chunk::new();
-        swap(&mut res, &mut self.buffer);
-        Ok(res)
+        Ok(self.buffer.get_sized_chunk(VECTOR_SIZE_THRESHOLD))
     }
 
     fn get_output_schema(&self) -> OutputSchema {

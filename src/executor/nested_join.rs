@@ -1,5 +1,3 @@
-use std::mem::swap;
-
 use sqlparser::ast::Expr;
 
 use crate::{
@@ -7,7 +5,7 @@ use crate::{
     types::{error::Error, Chunk, Row},
 };
 
-use super::{expression::ExprEvaluator, Executor, VECTOR_SIZE_THRESHOLD};
+use super::{expression::ExprEvaluator, Buffer, Executor, VECTOR_SIZE_THRESHOLD};
 
 pub struct NestedLoopJoin {
     output_schema: OutputSchema,
@@ -15,7 +13,7 @@ pub struct NestedLoopJoin {
     child_left: Box<dyn Executor>,
     child_right: Box<dyn Executor>,
 
-    buffer: Chunk,
+    buffer: Buffer,
     right_rows: Option<Vec<Row>>,
 }
 
@@ -27,7 +25,7 @@ impl NestedLoopJoin {
         output_schema: OutputSchema,
     ) -> Result<Box<NestedLoopJoin>, Error> {
         Ok(Box::new(NestedLoopJoin {
-            buffer: Chunk::default(),
+            buffer: Buffer::new(),
             right_rows: None,
             predicate,
             child_left,
@@ -87,13 +85,7 @@ impl Executor for NestedLoopJoin {
             }
         }
 
-        if self.buffer.is_empty() {
-            return Ok(Chunk::default());
-        }
-
-        let mut res = Chunk::new();
-        swap(&mut res, &mut self.buffer);
-        Ok(res)
+        Ok(self.buffer.get_sized_chunk(VECTOR_SIZE_THRESHOLD))
     }
     fn get_output_schema(&self) -> OutputSchema {
         self.output_schema.clone()
