@@ -10,21 +10,17 @@ pub struct Empty {
 
 impl Empty {
     pub fn new() -> Result<Box<Empty>, Error> {
-        Ok(Box::new(Empty {
-            buffer: Chunk {
-                data_chunks: vec![vec![]],
-            },
-        }))
+        let mut buffer = Chunk::new();
+        buffer.add_row(vec![]);
+        Ok(Box::new(Empty { buffer }))
     }
 }
 
 impl Executor for Empty {
     fn next_chunk(&mut self) -> Result<Chunk, Error> {
-        let mut res_chunks = Vec::new();
-        swap(&mut res_chunks, &mut self.buffer.data_chunks);
-        Ok(Chunk {
-            data_chunks: res_chunks,
-        })
+        let mut res = Chunk::new();
+        swap(&mut res, &mut self.buffer);
+        Ok(res)
     }
 
     fn get_output_schema(&self) -> OutputSchema {

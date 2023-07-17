@@ -33,18 +33,18 @@ impl Filter {
 
 impl Executor for Filter {
     fn next_chunk(&mut self) -> Result<Chunk, Error> {
-        while self.buffer.data_chunks.len() < VECTOR_SIZE_THRESHOLD {
+        while self.buffer.size() < VECTOR_SIZE_THRESHOLD {
             let next_chunk = self.child.next_chunk()?;
 
-            if next_chunk.data_chunks.is_empty() {
+            if next_chunk.is_empty() {
                 break;
             }
 
             let helper_chunks: Result<Vec<_>, _> = next_chunk
-                .data_chunks
-                .into_iter()
+                .get_rows()
+                .iter()
                 .map(|row| {
-                    let e = ExprEvaluator::evaluate(&self.filter, &row, &self.output_schema)?;
+                    let e = ExprEvaluator::evaluate(&self.filter, row, &self.output_schema)?;
                     Ok((row, e))
                 })
                 .collect();
@@ -52,21 +52,21 @@ impl Executor for Filter {
             let filtered_chunks: Vec<Vec<TupleValue>> = helper_chunks?
                 .into_iter()
                 .filter(|(_, field)| ExprEvaluator::to_boolean(field))
-                .map(|(row, _)| row)
+                .map(|(row, _)| row.clone())
                 .collect();
 
-            self.buffer.data_chunks.extend(filtered_chunks);
+            for row in filtered_chunks {
+                self.buffer.add_row(row)
+            }
         }
 
-        if self.buffer.data_chunks.is_empty() {
+        if self.buffer.is_empty() {
             return Ok(Chunk::default());
         }
 
-        let mut res_chunks = Vec::new();
-        swap(&mut res_chunks, &mut self.buffer.data_chunks);
-        Ok(Chunk {
-            data_chunks: res_chunks,
-        })
+        let mut res = Chunk::new();
+        swap(&mut res, &mut self.buffer);
+        Ok(res)
     }
 
     fn get_output_schema(&self) -> OutputSchema {

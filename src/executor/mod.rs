@@ -113,7 +113,7 @@ impl ExecutionEngine {
         loop {
             let chunk = executor.next_chunk()?;
 
-            if chunk.data_chunks.is_empty() {
+            if chunk.is_empty() {
                 break;
             }
 

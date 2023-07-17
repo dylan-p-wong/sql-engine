@@ -65,7 +65,27 @@ impl Column {
 
 #[derive(Default, Clone)]
 pub struct Chunk {
-    pub data_chunks: Vec<Row>,
+    data_chunks: Vec<Row>,
+}
+
+impl Chunk {
+    pub fn new() -> Chunk {
+        Chunk {
+            data_chunks: Vec::new(),
+        }
+    }
+    pub fn add_row(&mut self, row: Row) {
+        self.data_chunks.push(row);
+    }
+    pub fn size(&self) -> usize {
+        self.data_chunks.len()
+    }
+    pub fn is_empty(&self) -> bool {
+        self.data_chunks.is_empty()
+    }
+    pub fn get_rows(&self) -> &Vec<Row> {
+        &self.data_chunks
+    }
 }
 
 #[derive(Default)]

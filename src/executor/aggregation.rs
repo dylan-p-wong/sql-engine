@@ -60,16 +60,14 @@ impl Aggregation {
 
         loop {
             let chunk = self.child.next_chunk()?;
-            if chunk.data_chunks.is_empty() {
+            if chunk.is_empty() {
                 break;
             }
-            for row in chunk.data_chunks {
+            for row in chunk.get_rows() {
                 let group_by_values: Vec<Field> = self
                     .group_by
                     .iter()
-                    .map(|expr| {
-                        ExprEvaluator::evaluate(expr, &row, &self.child.get_output_schema())
-                    })
+                    .map(|expr| ExprEvaluator::evaluate(expr, row, &self.child.get_output_schema()))
                     .collect::<Result<Vec<Field>, Error>>()?;
 
                 // TODO(Dylan): See is there is some other better method to generate key
@@ -87,7 +85,7 @@ impl Aggregation {
                     for (i, function) in self.aggregates.iter().enumerate() {
                         let field = ExprEvaluator::evaluate(
                             &self.get_expr(function)?,
-                            &row,
+                            row,
                             &self.child.get_output_schema(),
                         )?;
                         accumulators[i].accumulate(&field)?;
@@ -99,13 +97,13 @@ impl Aggregation {
                             SelectItem::UnnamedExpr(e) => {
                                 let field = ExprEvaluator::evaluate(
                                     e,
-                                    &row,
+                                    row,
                                     &self.child.get_output_schema(),
                                 )?;
                                 non_aggregated_values.push(field);
                             }
                             SelectItem::Wildcard(_) => {
-                                for col in &row {
+                                for col in row {
                                     non_aggregated_values.push(col.value.clone());
                                 }
                             }
@@ -125,7 +123,7 @@ impl Aggregation {
                     for (i, function) in self.aggregates.iter().enumerate() {
                         let field = ExprEvaluator::evaluate(
                             &self.get_expr(function)?,
-                            &row,
+                            row,
                             &self.child.get_output_schema(),
                         )?;
                         value.0[i].accumulate(&field)?;
@@ -224,7 +222,7 @@ impl Executor for Aggregation {
         let n = cmp::min(VECTOR_SIZE_THRESHOLD, self.rows.as_ref().unwrap().len());
 
         self.rows.as_mut().unwrap().drain(0..n).for_each(|row| {
-            res.data_chunks.push(row);
+            res.add_row(row);
         });
 
         Ok(res)
