@@ -2,18 +2,17 @@ use crate::executor::expression::ExprEvaluator;
 use crate::executor::Executor;
 use crate::planner::OutputSchema;
 use crate::types::error::Error;
-use crate::types::{Chunk, TupleValue};
+use crate::types::Chunk;
 use sqlparser::ast::Expr;
-use std::mem::swap;
 
-use super::VECTOR_SIZE_THRESHOLD;
+use super::{Buffer, VECTOR_SIZE_THRESHOLD};
 
 pub struct Filter {
     output_schema: OutputSchema,
     filter: Expr,
     child: Box<dyn Executor>,
 
-    buffer: Chunk,
+    buffer: Buffer,
 }
 
 impl Filter {
@@ -26,47 +25,29 @@ impl Filter {
             filter,
             child,
             output_schema,
-            buffer: Chunk::default(),
+            buffer: Buffer::new(),
         }))
     }
 }
 
 impl Executor for Filter {
     fn next_chunk(&mut self) -> Result<Chunk, Error> {
-        while self.buffer.data_chunks.len() < VECTOR_SIZE_THRESHOLD {
+        while self.buffer.size() < VECTOR_SIZE_THRESHOLD {
             let next_chunk = self.child.next_chunk()?;
 
-            if next_chunk.data_chunks.is_empty() {
+            if next_chunk.is_empty() {
                 break;
             }
 
-            let helper_chunks: Result<Vec<_>, _> = next_chunk
-                .data_chunks
-                .into_iter()
-                .map(|row| {
-                    let e = ExprEvaluator::evaluate(&self.filter, &row, &self.output_schema)?;
-                    Ok((row, e))
-                })
-                .collect();
-
-            let filtered_chunks: Vec<Vec<TupleValue>> = helper_chunks?
-                .into_iter()
-                .filter(|(_, field)| ExprEvaluator::to_boolean(field))
-                .map(|(row, _)| row)
-                .collect();
-
-            self.buffer.data_chunks.extend(filtered_chunks);
+            for row in next_chunk.get_rows().iter() {
+                let e = ExprEvaluator::evaluate(&self.filter, row, &self.output_schema)?;
+                if ExprEvaluator::to_boolean(&e) {
+                    self.buffer.add_row(row.clone());
+                }
+            }
         }
 
-        if self.buffer.data_chunks.is_empty() {
-            return Ok(Chunk::default());
-        }
-
-        let mut res_chunks = Vec::new();
-        swap(&mut res_chunks, &mut self.buffer.data_chunks);
-        Ok(Chunk {
-            data_chunks: res_chunks,
-        })
+        Ok(self.buffer.get_sized_chunk(VECTOR_SIZE_THRESHOLD))
     }
 
     fn get_output_schema(&self) -> OutputSchema {

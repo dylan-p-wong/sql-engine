@@ -18,7 +18,7 @@ This is a project made to learn to implement query planning, optimization and ex
 You can build the project from source with the standard Rust toolchain.
 ```sh
 git clone https://github.com/dylan-p-wong/sql-engine.git
-git cd sql-engine
+cd sql-engine
 cargo build --release
 ```
 
@@ -51,15 +51,15 @@ Many SQL statements are supported and since this project is still having feature
 
 **Aggregates**
 ```
->> select min(score1) as min, max(score1) as max, sum(score1) as sum, avg(score1) as avg from 'tests/resources/data/movies1.parquet' group by year
-╭─────┬─────┬─────┬───────────╮
-│ min │ max │ sum │ avg       │
-├─────┼─────┼─────┼───────────┤
-│ 2   │ 8   │ 10  │ 5         │
-│ 10  │ 10  │ 10  │ 10        │
-│ 2   │ 9   │ 16  │ 5.3333335 │
-│ 2   │ 10  │ 12  │ 6         │
-╰─────┴─────┴─────┴───────────╯
+>> select min(score1) as min, max(score1) as max, sum(score1) as sum, avg(score1) as avg, year from 'tests/resources/data/movies1.parquet' group by year
+╭─────┬─────┬─────┬───────────┬──────╮
+│ min │ max │ sum │ avg       │ year │
+├─────┼─────┼─────┼───────────┼──────┤
+│ 2   │ 10  │ 12  │ 6         │ 1994 │
+│ 2   │ 8   │ 10  │ 5         │ 2012 │
+│ 2   │ 9   │ 16  │ 5.3333335 │ 1976 │
+│ 10  │ 10  │ 10  │ 10        │ 2011 │
+╰─────┴─────┴─────┴───────────┴──────╯
 ```
 
 **Joins**

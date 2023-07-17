@@ -14,7 +14,7 @@ impl sqllogictest::DB for DatabaseTestHelper {
             .iter()
             .flat_map(|chunk| {
                 chunk
-                    .data_chunks
+                    .get_rows()
                     .iter()
                     .map(|row| row.iter().map(|cell| cell.to_string()).collect())
             })

@@ -24,10 +24,10 @@ impl StorageReader for ParquetReader {
                 .get_column_iter()
                 .map(|x| TupleValue { value: x.1.clone() })
                 .collect::<Vec<TupleValue>>();
-            chunk.data_chunks.push(row);
+            chunk.add_row(row);
 
             // TODO add an exeuction context with this information
-            if chunk.data_chunks.len() >= 1024 {
+            if chunk.size() >= 1024 {
                 break;
             }
         }

@@ -1,5 +1,3 @@
-use std::mem::swap;
-
 use sqlparser::ast::Expr;
 
 use crate::{
@@ -7,7 +5,7 @@ use crate::{
     types::{error::Error, Chunk, Row},
 };
 
-use super::{expression::ExprEvaluator, Executor, VECTOR_SIZE_THRESHOLD};
+use super::{expression::ExprEvaluator, Buffer, Executor, VECTOR_SIZE_THRESHOLD};
 
 pub struct NestedLoopJoin {
     output_schema: OutputSchema,
@@ -15,7 +13,7 @@ pub struct NestedLoopJoin {
     child_left: Box<dyn Executor>,
     child_right: Box<dyn Executor>,
 
-    buffer: Chunk,
+    buffer: Buffer,
     right_rows: Option<Vec<Row>>,
 }
 
@@ -27,7 +25,7 @@ impl NestedLoopJoin {
         output_schema: OutputSchema,
     ) -> Result<Box<NestedLoopJoin>, Error> {
         Ok(Box::new(NestedLoopJoin {
-            buffer: Chunk::default(),
+            buffer: Buffer::new(),
             right_rows: None,
             predicate,
             child_left,
@@ -42,11 +40,11 @@ impl NestedLoopJoin {
         if self.right_rows.is_none() {
             loop {
                 let chunk = self.child_right.next_chunk()?;
-                if chunk.data_chunks.is_empty() {
+                if chunk.is_empty() {
                     break;
                 }
-                for row in chunk.data_chunks {
-                    res.push(row)
+                for row in chunk.get_rows() {
+                    res.push(row.clone())
                 }
             }
             self.right_rows = Some(res);
@@ -59,14 +57,14 @@ impl Executor for NestedLoopJoin {
     fn next_chunk(&mut self) -> Result<Chunk, Error> {
         self.init_right_rows()?;
 
-        while self.buffer.data_chunks.len() < VECTOR_SIZE_THRESHOLD {
+        while self.buffer.size() < VECTOR_SIZE_THRESHOLD {
             let next_chunk = self.child_left.next_chunk()?;
 
-            if next_chunk.data_chunks.is_empty() {
+            if next_chunk.is_empty() {
                 break;
             }
 
-            for left_row in next_chunk.data_chunks {
+            for left_row in next_chunk.get_rows() {
                 for right_row in self.right_rows.as_ref().unwrap().iter() {
                     let mut new_row = left_row.clone();
                     new_row.append(&mut right_row.clone());
@@ -82,20 +80,12 @@ impl Executor for NestedLoopJoin {
                         }
                     }
 
-                    self.buffer.data_chunks.push(new_row);
+                    self.buffer.add_row(new_row);
                 }
             }
         }
 
-        if self.buffer.data_chunks.is_empty() {
-            return Ok(Chunk::default());
-        }
-
-        let mut res_chunks = Vec::new();
-        swap(&mut res_chunks, &mut self.buffer.data_chunks);
-        Ok(Chunk {
-            data_chunks: res_chunks,
-        })
+        Ok(self.buffer.get_sized_chunk(VECTOR_SIZE_THRESHOLD))
     }
     fn get_output_schema(&self) -> OutputSchema {
         self.output_schema.clone()

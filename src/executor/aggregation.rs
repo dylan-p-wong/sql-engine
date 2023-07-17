@@ -1,4 +1,3 @@
-use std::cmp;
 use std::collections::HashMap;
 
 use parquet::record::Field;
@@ -10,7 +9,7 @@ use crate::types::error::Error;
 use crate::types::{Chunk, Row, TupleValue};
 
 use super::expression::{Caster, ExprEvaluator};
-use super::VECTOR_SIZE_THRESHOLD;
+use super::{Buffer, VECTOR_SIZE_THRESHOLD};
 
 type GroupByKey = Vec<String>;
 type AggregationColumns = Vec<Box<dyn Accumulator>>;
@@ -28,7 +27,7 @@ pub struct Aggregation {
     non_aggregates: Vec<SelectItem>,
     group_by: Vec<Expr>,
 
-    rows: Option<Vec<Row>>,
+    buffer: Option<Buffer>,
 }
 
 impl Aggregation {
@@ -45,13 +44,13 @@ impl Aggregation {
             group_by,
             aggregates,
             non_aggregates,
-            rows: None,
+            buffer: None,
         }))
     }
 
     fn init_accumulators(&mut self) -> Result<(), Error> {
         // TODO: consider when right rows is too large to fit in memory
-        if self.rows.is_some() {
+        if self.buffer.is_some() {
             return Ok(());
         }
 
@@ -60,16 +59,14 @@ impl Aggregation {
 
         loop {
             let chunk = self.child.next_chunk()?;
-            if chunk.data_chunks.is_empty() {
+            if chunk.is_empty() {
                 break;
             }
-            for row in chunk.data_chunks {
+            for row in chunk.get_rows() {
                 let group_by_values: Vec<Field> = self
                     .group_by
                     .iter()
-                    .map(|expr| {
-                        ExprEvaluator::evaluate(expr, &row, &self.child.get_output_schema())
-                    })
+                    .map(|expr| ExprEvaluator::evaluate(expr, row, &self.child.get_output_schema()))
                     .collect::<Result<Vec<Field>, Error>>()?;
 
                 // TODO(Dylan): See is there is some other better method to generate key
@@ -87,7 +84,7 @@ impl Aggregation {
                     for (i, function) in self.aggregates.iter().enumerate() {
                         let field = ExprEvaluator::evaluate(
                             &self.get_expr(function)?,
-                            &row,
+                            row,
                             &self.child.get_output_schema(),
                         )?;
                         accumulators[i].accumulate(&field)?;
@@ -99,13 +96,13 @@ impl Aggregation {
                             SelectItem::UnnamedExpr(e) => {
                                 let field = ExprEvaluator::evaluate(
                                     e,
-                                    &row,
+                                    row,
                                     &self.child.get_output_schema(),
                                 )?;
                                 non_aggregated_values.push(field);
                             }
                             SelectItem::Wildcard(_) => {
-                                for col in &row {
+                                for col in row {
                                     non_aggregated_values.push(col.value.clone());
                                 }
                             }
@@ -125,7 +122,7 @@ impl Aggregation {
                     for (i, function) in self.aggregates.iter().enumerate() {
                         let field = ExprEvaluator::evaluate(
                             &self.get_expr(function)?,
-                            &row,
+                            row,
                             &self.child.get_output_schema(),
                         )?;
                         value.0[i].accumulate(&field)?;
@@ -148,7 +145,7 @@ impl Aggregation {
             rows_map.insert(Vec::new(), (accumulators, non_aggregated_values));
         }
 
-        let mut rows = Vec::new();
+        let mut rows = Buffer::new();
 
         // calculate the rows
         for aggregate_row in rows_map.values() {
@@ -161,10 +158,10 @@ impl Aggregation {
             for v in aggregate_row.1.iter() {
                 row.push(TupleValue { value: v.clone() });
             }
-            rows.push(row);
+            rows.add_row(row);
         }
 
-        self.rows = Some(rows);
+        self.buffer = Some(rows);
         Ok(())
     }
 
@@ -218,16 +215,11 @@ impl Aggregation {
 impl Executor for Aggregation {
     fn next_chunk(&mut self) -> Result<Chunk, Error> {
         self.init_accumulators()?;
-
-        let mut res = Chunk::default();
-
-        let n = cmp::min(VECTOR_SIZE_THRESHOLD, self.rows.as_ref().unwrap().len());
-
-        self.rows.as_mut().unwrap().drain(0..n).for_each(|row| {
-            res.data_chunks.push(row);
-        });
-
-        Ok(res)
+        Ok(self
+            .buffer
+            .as_mut()
+            .unwrap()
+            .get_sized_chunk(VECTOR_SIZE_THRESHOLD))
     }
 
     fn get_output_schema(&self) -> OutputSchema {

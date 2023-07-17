@@ -6,9 +6,11 @@ mod nested_join;
 mod projection;
 mod scan;
 
+use std::cmp;
+
 use crate::{
     planner::{Node, OutputSchema, Plan, PlanNode},
-    types::{error::Error, Chunk, ResultSet},
+    types::{error::Error, Chunk, ResultSet, Row},
 };
 
 use self::{
@@ -113,7 +115,7 @@ impl ExecutionEngine {
         loop {
             let chunk = executor.next_chunk()?;
 
-            if chunk.data_chunks.is_empty() {
+            if chunk.is_empty() {
                 break;
             }
 
@@ -121,5 +123,35 @@ impl ExecutionEngine {
         }
 
         Ok(result)
+    }
+}
+
+struct Buffer {
+    rows: Vec<Row>,
+}
+
+impl Buffer {
+    fn new() -> Buffer {
+        Buffer { rows: Vec::new() }
+    }
+
+    fn add_row(&mut self, row: Row) {
+        self.rows.push(row);
+    }
+
+    fn size(&self) -> usize {
+        self.rows.len()
+    }
+
+    pub fn get_sized_chunk(&mut self, size: usize) -> Chunk {
+        let mut res = Chunk::new();
+
+        let n = cmp::min(size, self.size());
+
+        self.rows.drain(0..n).for_each(|row| {
+            res.add_row(row);
+        });
+
+        res
     }
 }
