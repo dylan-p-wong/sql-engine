@@ -174,9 +174,10 @@ impl Planner {
 
                         // Build PROJECTION
                         let mut select_items = projection.clone();
+                        let mut having_items = having.clone();
 
                         let extract_aggregates_result =
-                            self.extract_aggregates(&mut select_items)?;
+                            self.extract_aggregates(&mut select_items, &mut having_items)?;
 
                         let node = if let Some((all_aggregates, non_aggregate_projections)) =
                             extract_aggregates_result
@@ -187,9 +188,15 @@ impl Planner {
                                 &non_aggregate_projections,
                                 &all_aggregates,
                                 group_by,
-                                having,
+                                &having_items,
                             )?
                         } else {
+                            if having.is_some() {
+                                return Err(Error::Planner(
+                                    "HAVING clause without aggregates not supported".to_string(),
+                                ));
+                            }
+
                             self.build_non_aggregate_statement(node, &select_items)?
                         };
 
@@ -216,6 +223,7 @@ impl Planner {
     fn extract_aggregates(
         &self,
         select_items: &mut [SelectItem],
+        having: &mut Option<Expr>,
     ) -> Result<Option<(Vec<Function>, Vec<SelectItem>)>, Error> {
         // we need to extract the aggregate functions and handle those separately and extract the identifiers in the select items with aggregate functions
         // this allows to to get all the values we need to perform the aggregate functions and projections
@@ -258,6 +266,25 @@ impl Planner {
                     }
                 }
                 _ => {}
+            }
+        }
+
+        if having.is_some() {
+            let mut aggregates = Self::extract_aggregates_from_expr(
+                having.as_mut().unwrap(),
+                &mut total_aggregates,
+            )?;
+            if aggregates.is_empty() {
+                non_aggregate_projections.append(&mut Self::extract_identifiers_as_select_items(
+                    having.as_ref().unwrap(),
+                    &mut seen,
+                ));
+            } else {
+                all_aggregates.append(&mut aggregates);
+                non_aggregate_projections.append(&mut Self::extract_identifiers_as_select_items(
+                    having.as_ref().unwrap(),
+                    &mut seen,
+                ));
             }
         }
 
@@ -313,7 +340,7 @@ impl Planner {
         non_aggregate_projections: &Vec<SelectItem>,
         aggregates: &Vec<Function>,
         group_by: &[Expr],
-        _having: &Option<Expr>,
+        having: &Option<Expr>,
     ) -> Result<PlanNode, Error> {
         assert!(!aggregates.is_empty());
 
@@ -344,7 +371,16 @@ impl Planner {
             },
         };
 
-        // TODO(Dylan): plan a filter based on having clause
+        // plan a filter based on having clause
+        if having.is_some() {
+            node = PlanNode {
+                output_schema: node.output_schema.clone(),
+                node: Node::Filter {
+                    filter: having.as_ref().unwrap().clone(),
+                    child: Box::new(node),
+                },
+            };
+        }
 
         // plan a projection to get to the original projection
         node = PlanNode {

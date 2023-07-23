@@ -1,0 +1,50 @@
+query IIIII rowsort
+select * from 'tests/resources/data/movies2.parquet'
+----
+"a star is born" 5 6 6 1976
+"avengers" null 1 null 2012
+"carrie" null 3 null 1976
+"django" 8 8 8 2012
+"drive" 10 9 4 null
+"lion king" 2 null 5 1994
+"taxi driver" 9 8 7 1976
+"the shawshank redemption" 10 null 10 1994
+
+statement error Planner Error: HAVING clause without aggregates not supported
+select * from 'tests/resources/data/movies2.parquet' having year > 2000
+
+query III rowsort
+select count(*), sum(score1), max(score1), min(score1), avg(score1), year from 'tests/resources/data/movies2.parquet' group by year
+----
+1 10 10 10 10.0 null
+2 12 10 2 6.0 1994
+2 8 8 8 8.0 2012
+3 14 9 5 7.0 1976
+
+query III rowsort
+select count(*), max(score1), year from 'tests/resources/data/movies2.parquet' group by year having count(*) > 1
+----
+2 10 1994
+2 8 2012
+3 9 1976
+
+query III rowsort
+select count(*), max(score1), year from 'tests/resources/data/movies2.parquet' group by year having count(*) - 1 > 1
+----
+3 9 1976
+
+query III rowsort
+select count(*), max(score1), year from 'tests/resources/data/movies2.parquet' group by year having min(score1) < 4
+----
+2 10 1994
+
+query III rowsort
+select year from 'tests/resources/data/movies2.parquet' group by year having max(score1) = 10
+----
+1994
+null
+
+query III rowsort
+select year from 'tests/resources/data/movies2.parquet' group by year having max(score1) = 10 and year != null
+----
+1994
