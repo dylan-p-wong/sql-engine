@@ -2,6 +2,7 @@ mod aggregation;
 mod empty;
 mod expression;
 mod filter;
+mod limit;
 mod nested_join;
 mod projection;
 mod scan;
@@ -14,8 +15,8 @@ use crate::{
 };
 
 use self::{
-    aggregation::Aggregation, empty::Empty, filter::Filter, nested_join::NestedLoopJoin,
-    projection::Projection, scan::Scan,
+    aggregation::Aggregation, empty::Empty, filter::Filter, limit::Limit,
+    nested_join::NestedLoopJoin, projection::Projection, scan::Scan,
 };
 
 const VECTOR_SIZE_THRESHOLD: usize = 1024;
@@ -93,6 +94,14 @@ impl ExecutorBuilder {
                     group_by,
                     plan_node.output_schema,
                 ) {
+                    Ok(e) => Ok(e),
+                    Err(e) => Err(e),
+                }
+            }
+            Node::Limit { limit, child } => {
+                let child = Self::build(*child)?;
+
+                match Limit::new(child, limit, plan_node.output_schema) {
                     Ok(e) => Ok(e),
                     Err(e) => Err(e),
                 }
