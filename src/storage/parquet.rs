@@ -67,7 +67,7 @@ impl ParquetReader {
                 .columns()
                 .iter()
             {
-                output_schema.add_column(Column::new(None, column.name().to_string()))?;
+                output_schema.add_column(Column::new(None, column.name().to_string())?)?;
             }
 
             Ok(output_schema)

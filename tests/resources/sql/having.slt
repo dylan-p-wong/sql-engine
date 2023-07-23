@@ -10,9 +10,6 @@ select * from 'tests/resources/data/movies2.parquet'
 "taxi driver" 9 8 7 1976
 "the shawshank redemption" 10 null 10 1994
 
-statement error Planner Error: HAVING clause without aggregates not supported
-select * from 'tests/resources/data/movies2.parquet' having year > 2000
-
 query III rowsort
 select count(*), sum(score1), max(score1), min(score1), avg(score1), year from 'tests/resources/data/movies2.parquet' group by year
 ----
@@ -48,3 +45,6 @@ query III rowsort
 select year from 'tests/resources/data/movies2.parquet' group by year having max(score1) = 10 and year != null
 ----
 1994
+
+statement error Planner Error: HAVING clause without aggregates not supported
+select * from 'tests/resources/data/movies2.parquet' having year > 2000

@@ -142,6 +142,10 @@ impl Planner {
             plans.push(self.build_statement(statement)?);
         }
 
+        if plans.is_empty() {
+            return Err(Error::Planner("No statements found".to_string()));
+        }
+
         // TODO(Dylan): We are only using the last plan for now
         Ok(plans.pop().unwrap())
     }
@@ -176,12 +180,11 @@ impl Planner {
                         let mut select_items = projection.clone();
                         let mut having_items = having.clone();
 
-                        let extract_aggregates_result =
+                        // We extract the aggregates and the select items and the having clause
+                        let (all_aggregates, non_aggregate_projections) =
                             self.extract_aggregates(&mut select_items, &mut having_items)?;
 
-                        let node = if let Some((all_aggregates, non_aggregate_projections)) =
-                            extract_aggregates_result
-                        {
+                        let node = if !all_aggregates.is_empty() || !(*group_by).is_empty() {
                             self.build_aggregate_statement(
                                 node,
                                 &select_items.clone(),
@@ -224,7 +227,7 @@ impl Planner {
         &self,
         select_items: &mut [SelectItem],
         having: &mut Option<Expr>,
-    ) -> Result<Option<(Vec<Function>, Vec<SelectItem>)>, Error> {
+    ) -> Result<(Vec<Function>, Vec<SelectItem>), Error> {
         // we need to extract the aggregate functions and handle those separately and extract the identifiers in the select items with aggregate functions
         // this allows to to get all the values we need to perform the aggregate functions and projections
         // we replace the aggregates with an internal identifier #agg0, #agg1, etc.
@@ -288,11 +291,7 @@ impl Planner {
             }
         }
 
-        if all_aggregates.is_empty() {
-            Ok(None)
-        } else {
-            Ok(Some((all_aggregates, non_aggregate_projections)))
-        }
+        Ok((all_aggregates, non_aggregate_projections))
     }
 
     // builds a projection for select items without aggregates, group by or having
@@ -305,11 +304,11 @@ impl Planner {
         for item in end_projection {
             match item {
                 SelectItem::UnnamedExpr(expr) => {
-                    output_schema.add_column(Column::new(None, expr.to_string()))?;
+                    output_schema.add_column(Column::new(None, expr.to_string())?)?;
                 }
                 SelectItem::ExprWithAlias { expr, alias } => {
                     output_schema
-                        .add_column(Column::new(Some(alias.value.clone()), expr.to_string()))?;
+                        .add_column(Column::new(Some(alias.value.clone()), expr.to_string())?)?;
                 }
                 SelectItem::Wildcard(_) => {
                     output_schema.append(&child.output_schema.clone())?;
@@ -342,7 +341,7 @@ impl Planner {
         group_by: &[Expr],
         having: &Option<Expr>,
     ) -> Result<PlanNode, Error> {
-        assert!(!aggregates.is_empty());
+        assert!(!aggregates.is_empty() || !group_by.is_empty());
 
         // aggregates functions (#agg0, #agg1, etc.) followed by group by followed by non-aggregates we need
         let mut first_projection_with_aggregates_output_schema = OutputSchema::new();
@@ -404,11 +403,11 @@ impl Planner {
         for item in projection {
             match item {
                 SelectItem::UnnamedExpr(expr) => {
-                    output_schema.add_column(Column::new(None, expr.to_string()))?;
+                    output_schema.add_column(Column::new(None, expr.to_string())?)?;
                 }
                 SelectItem::ExprWithAlias { expr, alias } => {
                     output_schema
-                        .add_column(Column::new(Some(alias.value.clone()), expr.to_string()))?;
+                        .add_column(Column::new(Some(alias.value.clone()), expr.to_string())?)?;
                 }
                 SelectItem::Wildcard(_) => {
                     output_schema.append(&child.output_schema.clone())?;
@@ -418,6 +417,29 @@ impl Planner {
         }
 
         Ok(output_schema)
+    }
+
+    #[allow(dead_code)]
+    fn replace_wildcards(
+        &self,
+        projection: Vec<SelectItem>,
+        child: &PlanNode,
+    ) -> Result<Vec<SelectItem>, Error> {
+        let mut res = Vec::new();
+        for item in projection {
+            match item {
+                SelectItem::UnnamedExpr(_) => res.push(item.clone()),
+                SelectItem::ExprWithAlias { .. } => res.push(item.clone()),
+                SelectItem::Wildcard(_) => {
+                    for column in &child.output_schema.columns {
+                        res.push(column.as_select_item());
+                    }
+                }
+                _ => return Err(Error::Planner(format!("{} not supported", item))),
+            }
+        }
+
+        Ok(res)
     }
 
     fn build_from_clause(&self, from: &Vec<TableWithJoins>) -> Result<PlanNode, Error> {

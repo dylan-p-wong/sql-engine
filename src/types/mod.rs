@@ -1,9 +1,13 @@
 use std::fmt;
 
 use parquet::record::Field;
+use regex::Regex;
+use sqlparser::ast::SelectItem;
 use tabled::{builder::Builder, settings::Style};
 
 use crate::planner::OutputSchema;
+
+use self::error::Error;
 
 pub mod error;
 
@@ -43,10 +47,11 @@ pub struct Column {
 }
 
 impl Column {
-    pub fn new(label: Option<String>, name: String) -> Column {
+    pub fn new(label: Option<String>, name: String) -> Result<Column, Error> {
         let mut table = None;
         let column_name;
 
+        // TODO(Dylan): Rewrite this logic
         if name.contains('.') {
             let parts: Vec<_> = name.split('.').collect();
             table = Some(parts[0].to_string());
@@ -55,12 +60,72 @@ impl Column {
             column_name = &name;
         }
 
-        Column {
+        Ok(Column {
             label,
             table,
             column_name: column_name.to_string(),
+        })
+    }
+
+    #[allow(dead_code)]
+    pub fn as_select_item(&self) -> SelectItem {
+        let mut ident_name = self.column_name.clone();
+        if let Some(table) = &self.table {
+            ident_name = format!("{}.{}", table, self.column_name);
+        }
+
+        let ident = sqlparser::ast::Ident::new(ident_name);
+
+        if let Some(label) = &self.label {
+            let alias = sqlparser::ast::Ident::new(label);
+
+            SelectItem::ExprWithAlias {
+                expr: sqlparser::ast::Expr::Identifier(ident),
+                alias,
+            }
+        } else {
+            SelectItem::UnnamedExpr(sqlparser::ast::Expr::Identifier(ident))
         }
     }
+}
+
+#[allow(dead_code)]
+pub fn parse_identifer(name: &str) -> Result<(String, Option<String>), Error> {
+    let mut table_name = None;
+    let field_name;
+
+    if name.contains('.') {
+        if name.starts_with('\'') {
+            let re = Regex::new(r"(?<table>'.+')\.(?<column>.+)").unwrap();
+
+            let Some(caps) = re.captures(name) else {
+                    return Err(Error::Planner(format!("Invalid field name: {}", name)));
+                };
+
+            if caps.name("table").is_none() || caps.name("column").is_none() {
+                return Err(Error::Planner(format!("Invalid field name: {}", name)));
+            }
+
+            table_name = Some(caps.name("table").unwrap().as_str());
+            field_name = Some(caps.name("column").unwrap().as_str());
+        } else {
+            let parts: Vec<_> = name.split('.').collect();
+
+            if parts.len() != 2 {
+                return Err(Error::Planner(format!("Invalid field name: {}", name)));
+            }
+
+            table_name = Some(parts[0]);
+            field_name = Some(parts[1]);
+        }
+    } else {
+        field_name = Some(name);
+    }
+
+    Ok((
+        field_name.unwrap().to_string(),
+        table_name.map(|s| s.to_string()),
+    ))
 }
 
 #[derive(Default, Clone)]
