@@ -124,6 +124,7 @@ impl ExprEvaluator {
             BinaryOperator::LtEq => Ok(BinaryOpEvaluator::less_than_or_equal(left, right)?),
             BinaryOperator::Gt => Ok(BinaryOpEvaluator::greater_than(left, right)?),
             BinaryOperator::GtEq => Ok(BinaryOpEvaluator::greater_than_or_equal(left, right)?),
+            BinaryOperator::Modulo => Ok(BinaryOpEvaluator::modulo(left, right)?),
             _ => Err(Error::Expression(format!(
                 "Binary operation {} not supported",
                 op
@@ -243,6 +244,19 @@ impl BinaryOpEvaluator {
 
     fn greater_than_or_equal(left: &Field, right: &Field) -> Result<Field, Error> {
         Self::less_than_or_equal(right, left)
+    }
+
+    fn modulo(left: &Field, right: &Field) -> Result<Field, Error> {
+        match (left, right) {
+            (Field::Int(l), Field::Int(r)) => Ok(Field::Int(l % r)),
+            (Field::Long(l), Field::Long(r)) => Ok(Field::Long(l % r)),
+            (Field::Float(l), Field::Float(r)) => Ok(Field::Float(l % r)),
+            (Field::Double(l), Field::Double(r)) => Ok(Field::Double(l % r)),
+            _ => Err(Error::Expression(format!(
+                "Unsupported binary operation: {} % {}",
+                left, right
+            ))),
+        }
     }
 }
 

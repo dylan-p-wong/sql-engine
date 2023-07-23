@@ -117,6 +117,10 @@ pub enum Node {
         non_aggregates: Vec<SelectItem>,
         group_by: Vec<Expr>,
     },
+    Limit {
+        limit: u64,
+        child: Box<PlanNode>,
+    },
     Empty {},
 }
 
@@ -145,7 +149,11 @@ impl Planner {
     fn build_statement(&self, statement: &Statement) -> Result<Plan, Error> {
         match statement {
             Statement::Query(query) => {
-                let Query { ref body, .. } = **query;
+                let Query {
+                    ref body,
+                    ref limit,
+                    ..
+                } = **query;
 
                 match &**body {
                     SetExpr::Select(select) => {
@@ -190,6 +198,7 @@ impl Planner {
                         // Build OFFSET
 
                         // Build LIMIT
+                        let node = self.build_limit_clause(node, limit.clone())?;
 
                         Ok(Plan { root: node })
                     }
@@ -552,5 +561,29 @@ impl Planner {
         }
 
         literals
+    }
+
+    fn build_limit_clause(&self, child: PlanNode, limit: Option<Expr>) -> Result<PlanNode, Error> {
+        if limit.is_some() {
+            let limit = limit.as_ref().unwrap();
+            let limit = match limit {
+                Expr::Value(sqlparser::ast::Value::Number(n, _)) => n.parse::<u64>().unwrap(),
+                _ => {
+                    return Err(Error::Planner(
+                        "Only numbers supported for limit clause".to_string(),
+                    ))
+                }
+            };
+
+            Ok(PlanNode {
+                output_schema: child.output_schema.clone(),
+                node: Node::Limit {
+                    limit,
+                    child: Box::new(child),
+                },
+            })
+        } else {
+            Ok(child)
+        }
     }
 }

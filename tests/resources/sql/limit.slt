@@ -1,0 +1,29 @@
+query IIII
+select * from 'tests/resources/data/animals1.parquet'
+----
+"dog" "red" "M" 1
+"dog" "blue" "M" 2
+"cat" "red" "M" 3
+"cat" "blue" "F" 4
+"rhino" "grey" "F" 5
+"rhino" "black" "F" 6
+
+query IIII
+select * from 'tests/resources/data/animals1.parquet' limit 3
+----
+"dog" "red" "M" 1
+"dog" "blue" "M" 2
+"cat" "red" "M" 3
+
+statement error Planner Error: Only numbers supported for limit clause
+select * from 'tests/resources/data/animals1.parquet' limit 'bad'
+
+query IIII
+select * from 'tests/resources/data/animals1.parquet' where age % 2 = 0 limit 2
+----
+"dog" "blue" "M" 2
+"cat" "blue" "F" 4
+
+query IIII
+select * from 'tests/resources/data/animals1.parquet' limit 0
+----
