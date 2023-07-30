@@ -48,13 +48,12 @@ pub struct Column {
 
 impl Column {
     pub fn new(label: Option<String>, name: String) -> Result<Column, Error> {
-        
         let (column_name, table) = parse_identifer(&name)?;
 
         Ok(Column {
             label,
             table,
-            column_name: column_name.to_string(),
+            column_name,
         })
     }
 

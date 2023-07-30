@@ -7,7 +7,7 @@ use sqlparser::ast::{
 
 use crate::{
     storage::{get_table_path, parquet::ParquetReader},
-    types::{error::Error, Column, parse_identifer},
+    types::{error::Error, parse_identifer, Column},
 };
 
 #[derive(Debug, Default, Clone)]
@@ -48,7 +48,8 @@ impl OutputSchema {
 
         for (i, column) in self.columns.iter().enumerate() {
             if table_name.is_some()
-                && (column.table.is_none() || table_name.as_ref().unwrap() != column.table.as_ref().unwrap())
+                && (column.table.is_none()
+                    || table_name.as_ref().unwrap() != column.table.as_ref().unwrap())
             {
                 continue;
             }
@@ -371,13 +372,20 @@ impl Planner {
                     match expr {
                         // we only add the name if it is an identifier or compound identifier
                         Expr::Identifier(_) => {
-                            output_schema.add_column(Column::new(Some(expr.to_string()), expr.to_string())?)?;
+                            output_schema.add_column(Column::new(
+                                Some(expr.to_string()),
+                                expr.to_string(),
+                            )?)?;
                         }
                         Expr::CompoundIdentifier(_) => {
-                            output_schema.add_column(Column::new(Some(expr.to_string()), expr.to_string())?)?;
+                            output_schema.add_column(Column::new(
+                                Some(expr.to_string()),
+                                expr.to_string(),
+                            )?)?;
                         }
                         _ => {
-                            output_schema.add_column(Column::new(Some(expr.to_string()), "".to_string())?)?;
+                            output_schema
+                                .add_column(Column::new(Some(expr.to_string()), "".to_string())?)?;
                         }
                     }
                 }
@@ -385,13 +393,22 @@ impl Planner {
                     match expr {
                         // we only add the name if it is an identifier or compound identifier
                         Expr::Identifier(_) => {
-                            output_schema.add_column(Column::new(Some(alias.value.clone()), expr.to_string())?)?;
+                            output_schema.add_column(Column::new(
+                                Some(alias.value.clone()),
+                                expr.to_string(),
+                            )?)?;
                         }
                         Expr::CompoundIdentifier(_) => {
-                            output_schema.add_column(Column::new(Some(alias.value.clone()), expr.to_string())?)?;
+                            output_schema.add_column(Column::new(
+                                Some(alias.value.clone()),
+                                expr.to_string(),
+                            )?)?;
                         }
                         _ => {
-                            output_schema.add_column(Column::new(Some(alias.value.clone()), "".to_string())?)?;
+                            output_schema.add_column(Column::new(
+                                Some(alias.value.clone()),
+                                "".to_string(),
+                            )?)?;
                         }
                     }
                 }
