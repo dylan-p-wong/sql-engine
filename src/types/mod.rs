@@ -48,17 +48,8 @@ pub struct Column {
 
 impl Column {
     pub fn new(label: Option<String>, name: String) -> Result<Column, Error> {
-        let mut table = None;
-        let column_name;
-
-        // TODO(Dylan): Rewrite this logic
-        if name.contains('.') {
-            let parts: Vec<_> = name.split('.').collect();
-            table = Some(parts[0].to_string());
-            column_name = parts[1];
-        } else {
-            column_name = &name;
-        }
+        
+        let (column_name, table) = parse_identifer(&name)?;
 
         Ok(Column {
             label,
@@ -89,7 +80,6 @@ impl Column {
     }
 }
 
-#[allow(dead_code)]
 pub fn parse_identifer(name: &str) -> Result<(String, Option<String>), Error> {
     let mut table_name = None;
     let field_name;

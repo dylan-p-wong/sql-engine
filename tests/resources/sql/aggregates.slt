@@ -43,3 +43,10 @@ select max(animals.age) * min(animals.age) * animals.age * (animals.age * animal
 2 "dog"
 324 "cat"
 3750 "rhino"
+
+query IIII rowsort
+select max(animals.age) * min(animals.age) * animals.age * (animals.age * animals.age) as aa, animals.animal from 'tests/resources/data/animals1.parquet' as animals group by animals.animal
+----
+2 "dog"
+324 "cat"
+3750 "rhino"

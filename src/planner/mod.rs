@@ -300,27 +300,6 @@ impl Planner {
         child: PlanNode,
         end_projection: &Vec<SelectItem>,
     ) -> Result<PlanNode, Error> {
-        let mut output_schema = OutputSchema::new();
-        for item in end_projection {
-            match item {
-                SelectItem::UnnamedExpr(expr) => {
-                    output_schema.add_column(Column::new(None, expr.to_string())?)?;
-                }
-                SelectItem::ExprWithAlias { expr, alias } => {
-                    output_schema
-                        .add_column(Column::new(Some(alias.value.clone()), expr.to_string())?)?;
-                }
-                SelectItem::Wildcard(_) => {
-                    output_schema.append(&child.output_schema.clone())?;
-                }
-                _ => {
-                    return Err(Error::Planner(
-                        "Only UnnamedExpr and ExprWithAlias supported".to_string(),
-                    ))
-                }
-            }
-        }
-
         let node = PlanNode {
             output_schema: self.get_output_schema_from_projection(end_projection, &child)?,
             node: Node::Projection {
@@ -403,11 +382,32 @@ impl Planner {
         for item in projection {
             match item {
                 SelectItem::UnnamedExpr(expr) => {
-                    output_schema.add_column(Column::new(None, expr.to_string())?)?;
+                    match expr {
+                        // we only add the name if it is an identifier or compound identifier
+                        Expr::Identifier(_) => {
+                            output_schema.add_column(Column::new(Some(expr.to_string()), expr.to_string())?)?;
+                        }
+                        Expr::CompoundIdentifier(_) => {
+                            output_schema.add_column(Column::new(Some(expr.to_string()), expr.to_string())?)?;
+                        }
+                        _ => {
+                            output_schema.add_column(Column::new(Some(expr.to_string()), "".to_string())?)?;
+                        }
+                    }
                 }
                 SelectItem::ExprWithAlias { expr, alias } => {
-                    output_schema
-                        .add_column(Column::new(Some(alias.value.clone()), expr.to_string())?)?;
+                    match expr {
+                        // we only add the name if it is an identifier or compound identifier
+                        Expr::Identifier(_) => {
+                            output_schema.add_column(Column::new(Some(alias.value.clone()), expr.to_string())?)?;
+                        }
+                        Expr::CompoundIdentifier(_) => {
+                            output_schema.add_column(Column::new(Some(alias.value.clone()), expr.to_string())?)?;
+                        }
+                        _ => {
+                            output_schema.add_column(Column::new(Some(alias.value.clone()), "".to_string())?)?;
+                        }
+                    }
                 }
                 SelectItem::Wildcard(_) => {
                     output_schema.append(&child.output_schema.clone())?;
