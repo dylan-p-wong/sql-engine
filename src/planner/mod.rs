@@ -7,7 +7,7 @@ use sqlparser::ast::{
 
 use crate::{
     storage::{get_table_path, parquet::ParquetReader},
-    types::{error::Error, Column},
+    types::{error::Error, Column, parse_identifer},
 };
 
 #[derive(Debug, Default, Clone)]
@@ -42,32 +42,18 @@ impl OutputSchema {
     }
 
     pub fn resolve(&self, name: &str) -> Result<usize, Error> {
-        let mut table_name = None;
-        let field_name;
-
-        if name.contains('.') {
-            let parts: Vec<_> = name.split('.').collect();
-
-            if parts.len() != 2 {
-                return Err(Error::Planner(format!("Invalid field name: {}", name)));
-            }
-
-            table_name = Some(parts[0]);
-            field_name = Some(parts[1]);
-        } else {
-            field_name = Some(name);
-        }
+        let (field_name, table_name) = parse_identifer(name)?;
 
         let mut result_index = None;
 
         for (i, column) in self.columns.iter().enumerate() {
             if table_name.is_some()
-                && (column.table.is_none() || table_name.unwrap() != column.table.as_ref().unwrap())
+                && (column.table.is_none() || table_name.as_ref().unwrap() != column.table.as_ref().unwrap())
             {
                 continue;
             }
 
-            if field_name.is_some() && field_name.unwrap() != column.column_name {
+            if field_name != column.column_name {
                 continue;
             }
 
