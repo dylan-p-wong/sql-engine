@@ -7,7 +7,7 @@ use sqlparser::ast::{
 
 use crate::{
     storage::{get_table_path, parquet::ParquetReader},
-    types::{error::Error, Column},
+    types::{error::Error, parse_identifer, Column},
 };
 
 #[derive(Debug, Default, Clone)]
@@ -42,32 +42,19 @@ impl OutputSchema {
     }
 
     pub fn resolve(&self, name: &str) -> Result<usize, Error> {
-        let mut table_name = None;
-        let field_name;
-
-        if name.contains('.') {
-            let parts: Vec<_> = name.split('.').collect();
-
-            if parts.len() != 2 {
-                return Err(Error::Planner(format!("Invalid field name: {}", name)));
-            }
-
-            table_name = Some(parts[0]);
-            field_name = Some(parts[1]);
-        } else {
-            field_name = Some(name);
-        }
+        let (field_name, table_name) = parse_identifer(name)?;
 
         let mut result_index = None;
 
         for (i, column) in self.columns.iter().enumerate() {
             if table_name.is_some()
-                && (column.table.is_none() || table_name.unwrap() != column.table.as_ref().unwrap())
+                && (column.table.is_none()
+                    || table_name.as_ref().unwrap() != column.table.as_ref().unwrap())
             {
                 continue;
             }
 
-            if field_name.is_some() && field_name.unwrap() != column.column_name {
+            if field_name != column.column_name {
                 continue;
             }
 
@@ -142,6 +129,10 @@ impl Planner {
             plans.push(self.build_statement(statement)?);
         }
 
+        if plans.is_empty() {
+            return Err(Error::Planner("No statements found".to_string()));
+        }
+
         // TODO(Dylan): We are only using the last plan for now
         Ok(plans.pop().unwrap())
     }
@@ -174,22 +165,28 @@ impl Planner {
 
                         // Build PROJECTION
                         let mut select_items = projection.clone();
+                        let mut having_items = having.clone();
 
-                        let extract_aggregates_result =
-                            self.extract_aggregates(&mut select_items)?;
+                        // We extract the aggregates and the select items and the having clause
+                        let (all_aggregates, non_aggregate_projections) =
+                            self.extract_aggregates(&mut select_items, &mut having_items)?;
 
-                        let node = if let Some((all_aggregates, non_aggregate_projections)) =
-                            extract_aggregates_result
-                        {
+                        let node = if !all_aggregates.is_empty() || !(*group_by).is_empty() {
                             self.build_aggregate_statement(
                                 node,
                                 &select_items.clone(),
                                 &non_aggregate_projections,
                                 &all_aggregates,
                                 group_by,
-                                having,
+                                &having_items,
                             )?
                         } else {
+                            if having.is_some() {
+                                return Err(Error::Planner(
+                                    "HAVING clause without aggregates not supported".to_string(),
+                                ));
+                            }
+
                             self.build_non_aggregate_statement(node, &select_items)?
                         };
 
@@ -216,7 +213,8 @@ impl Planner {
     fn extract_aggregates(
         &self,
         select_items: &mut [SelectItem],
-    ) -> Result<Option<(Vec<Function>, Vec<SelectItem>)>, Error> {
+        having: &mut Option<Expr>,
+    ) -> Result<(Vec<Function>, Vec<SelectItem>), Error> {
         // we need to extract the aggregate functions and handle those separately and extract the identifiers in the select items with aggregate functions
         // this allows to to get all the values we need to perform the aggregate functions and projections
         // we replace the aggregates with an internal identifier #agg0, #agg1, etc.
@@ -261,11 +259,26 @@ impl Planner {
             }
         }
 
-        if all_aggregates.is_empty() {
-            Ok(None)
-        } else {
-            Ok(Some((all_aggregates, non_aggregate_projections)))
+        if having.is_some() {
+            let mut aggregates = Self::extract_aggregates_from_expr(
+                having.as_mut().unwrap(),
+                &mut total_aggregates,
+            )?;
+            if aggregates.is_empty() {
+                non_aggregate_projections.append(&mut Self::extract_identifiers_as_select_items(
+                    having.as_ref().unwrap(),
+                    &mut seen,
+                ));
+            } else {
+                all_aggregates.append(&mut aggregates);
+                non_aggregate_projections.append(&mut Self::extract_identifiers_as_select_items(
+                    having.as_ref().unwrap(),
+                    &mut seen,
+                ));
+            }
         }
+
+        Ok((all_aggregates, non_aggregate_projections))
     }
 
     // builds a projection for select items without aggregates, group by or having
@@ -274,27 +287,6 @@ impl Planner {
         child: PlanNode,
         end_projection: &Vec<SelectItem>,
     ) -> Result<PlanNode, Error> {
-        let mut output_schema = OutputSchema::new();
-        for item in end_projection {
-            match item {
-                SelectItem::UnnamedExpr(expr) => {
-                    output_schema.add_column(Column::new(None, expr.to_string()))?;
-                }
-                SelectItem::ExprWithAlias { expr, alias } => {
-                    output_schema
-                        .add_column(Column::new(Some(alias.value.clone()), expr.to_string()))?;
-                }
-                SelectItem::Wildcard(_) => {
-                    output_schema.append(&child.output_schema.clone())?;
-                }
-                _ => {
-                    return Err(Error::Planner(
-                        "Only UnnamedExpr and ExprWithAlias supported".to_string(),
-                    ))
-                }
-            }
-        }
-
         let node = PlanNode {
             output_schema: self.get_output_schema_from_projection(end_projection, &child)?,
             node: Node::Projection {
@@ -313,9 +305,9 @@ impl Planner {
         non_aggregate_projections: &Vec<SelectItem>,
         aggregates: &Vec<Function>,
         group_by: &[Expr],
-        _having: &Option<Expr>,
+        having: &Option<Expr>,
     ) -> Result<PlanNode, Error> {
-        assert!(!aggregates.is_empty());
+        assert!(!aggregates.is_empty() || !group_by.is_empty());
 
         // aggregates functions (#agg0, #agg1, etc.) followed by group by followed by non-aggregates we need
         let mut first_projection_with_aggregates_output_schema = OutputSchema::new();
@@ -344,7 +336,16 @@ impl Planner {
             },
         };
 
-        // TODO(Dylan): plan a filter based on having clause
+        // plan a filter based on having clause
+        if having.is_some() {
+            node = PlanNode {
+                output_schema: node.output_schema.clone(),
+                node: Node::Filter {
+                    filter: having.as_ref().unwrap().clone(),
+                    child: Box::new(node),
+                },
+            };
+        }
 
         // plan a projection to get to the original projection
         node = PlanNode {
@@ -368,11 +369,48 @@ impl Planner {
         for item in projection {
             match item {
                 SelectItem::UnnamedExpr(expr) => {
-                    output_schema.add_column(Column::new(None, expr.to_string()))?;
+                    match expr {
+                        // we only add the name if it is an identifier or compound identifier
+                        Expr::Identifier(_) => {
+                            output_schema.add_column(Column::new(
+                                Some(expr.to_string()),
+                                expr.to_string(),
+                            )?)?;
+                        }
+                        Expr::CompoundIdentifier(_) => {
+                            output_schema.add_column(Column::new(
+                                Some(expr.to_string()),
+                                expr.to_string(),
+                            )?)?;
+                        }
+                        _ => {
+                            output_schema
+                                .add_column(Column::new(Some(expr.to_string()), "".to_string())?)?;
+                        }
+                    }
                 }
                 SelectItem::ExprWithAlias { expr, alias } => {
-                    output_schema
-                        .add_column(Column::new(Some(alias.value.clone()), expr.to_string()))?;
+                    match expr {
+                        // we only add the name if it is an identifier or compound identifier
+                        Expr::Identifier(_) => {
+                            output_schema.add_column(Column::new(
+                                Some(alias.value.clone()),
+                                expr.to_string(),
+                            )?)?;
+                        }
+                        Expr::CompoundIdentifier(_) => {
+                            output_schema.add_column(Column::new(
+                                Some(alias.value.clone()),
+                                expr.to_string(),
+                            )?)?;
+                        }
+                        _ => {
+                            output_schema.add_column(Column::new(
+                                Some(alias.value.clone()),
+                                "".to_string(),
+                            )?)?;
+                        }
+                    }
                 }
                 SelectItem::Wildcard(_) => {
                     output_schema.append(&child.output_schema.clone())?;
@@ -382,6 +420,29 @@ impl Planner {
         }
 
         Ok(output_schema)
+    }
+
+    #[allow(dead_code)]
+    fn replace_wildcards(
+        &self,
+        projection: Vec<SelectItem>,
+        child: &PlanNode,
+    ) -> Result<Vec<SelectItem>, Error> {
+        let mut res = Vec::new();
+        for item in projection {
+            match item {
+                SelectItem::UnnamedExpr(_) => res.push(item.clone()),
+                SelectItem::ExprWithAlias { .. } => res.push(item.clone()),
+                SelectItem::Wildcard(_) => {
+                    for column in &child.output_schema.columns {
+                        res.push(column.as_select_item());
+                    }
+                }
+                _ => return Err(Error::Planner(format!("{} not supported", item))),
+            }
+        }
+
+        Ok(res)
     }
 
     fn build_from_clause(&self, from: &Vec<TableWithJoins>) -> Result<PlanNode, Error> {
